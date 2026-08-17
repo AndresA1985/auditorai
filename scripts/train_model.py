@@ -12,6 +12,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import NearestNeighbors
 
+from app.config import settings
 from app.db import fetch_all
 
 
@@ -170,10 +171,10 @@ def entrenar(output: Path, min_similarity: float, limit: int | None, test_size: 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Entrena el modelo local auditai desde MySQL.")
-    parser.add_argument("--output", default=str(ROOT / "models" / "auditai_model.joblib"))
-    parser.add_argument("--min-similarity", type=float, default=0.20)
+    parser.add_argument("--output", default=str(settings.model_path))
+    parser.add_argument("--min-similarity", type=float, default=settings.model_min_similarity)
     parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--test-size", type=float, default=0.20)
+    parser.add_argument("--test-size", type=float, default=settings.train_test_size)
     args = parser.parse_args()
 
     result = entrenar(Path(args.output), args.min_similarity, args.limit, args.test_size)

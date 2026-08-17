@@ -4,9 +4,10 @@ from typing import Dict, Iterable, List, Tuple
 
 import joblib
 
+from .config import settings
 from .schemas import PrediccionRequest
 
-MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "auditai_model.joblib"
+MODEL_PATH = settings.model_path
 
 
 def separar_codigos(valor: str) -> List[str]:
@@ -59,7 +60,7 @@ def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tupl
     vectorizer = artefacto["vectorizer"]
     neighbors = artefacto["neighbors"]
     labels = artefacto["labels"]
-    min_similarity = artefacto.get("min_similarity", 0.20)
+    min_similarity = artefacto.get("min_similarity", settings.model_min_similarity)
 
     distances, indices = neighbors.kneighbors(vectorizer.transform([texto]), n_neighbors=1)
     similarity = 1.0 - float(distances[0][0])

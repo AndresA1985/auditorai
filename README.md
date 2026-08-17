@@ -7,7 +7,10 @@ Servicio FastAPI local para sugerir codigos auditor, honorarios por codigo, tiem
 ```bash
 cd /home/anakin/projects/auditorai
 /home/virtual/auditoriai/bin/python -m pip install -r requirements.txt
+cp .env.example .env
 ```
+
+Edita `.env` con las credenciales y constantes locales antes de ejecutar el servicio.
 
 ## Ejecutar
 

@@ -129,11 +129,11 @@ def puntuar(req: PrediccionRequest, row: dict, entrada_tokens: Counter) -> float
     proc_req = limpiar_texto(req.procedimiento_sistema or "")
     proc_hist = limpiar_texto(" ".join([str(row.get("nombre_procedimiento") or ""), str(row.get("procedimiento_auditor") or "")]))
     if proc_req and proc_hist and proc_req in proc_hist:
-        score += 0.20
+        score += settings.score_exact_match_bonus
     elif proc_req and proc_hist and any(tok in proc_hist for tok in proc_req.split() if len(tok) > 4):
-        score += 0.08
+        score += settings.score_token_match_bonus
     if row.get("codigo_grupo_auditor"):
-        score += 0.03
+        score += settings.score_code_group_bonus
     return score
 
 
