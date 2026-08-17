@@ -38,6 +38,10 @@ def env_path(name: str) -> Path:
     return ROOT_DIR / value
 
 
+def env_str(name: str) -> str:
+    return required_env(name).strip()
+
+
 @dataclass(frozen=True)
 class Settings:
     db_host: str = required_env("DB_HOST")
@@ -52,6 +56,10 @@ class Settings:
     score_token_match_bonus: float = env_float("AUDITORIA_SCORE_TOKEN_MATCH_BONUS")
     score_code_group_bonus: float = env_float("AUDITORIA_SCORE_CODE_GROUP_BONUS")
     train_test_size: float = env_float("AUDITORIA_TRAIN_TEST_SIZE")
+    model_engine: str = env_str("AUDITORIA_MODEL_ENGINE")
+    embedding_model_name: str = env_str("AUDITORIA_EMBEDDING_MODEL")
+    embedding_device: str = env_str("AUDITORIA_EMBEDDING_DEVICE")
+    embedding_batch_size: int = env_int("AUDITORIA_EMBEDDING_BATCH_SIZE")
 
 
 settings = Settings()

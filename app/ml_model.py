@@ -1,8 +1,10 @@
 import re
+from functools import lru_cache
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import joblib
+from sklearn.neighbors import NearestNeighbors
 
 from .config import settings
 from .schemas import PrediccionRequest
@@ -21,7 +23,6 @@ def separar_codigos(valor: str) -> List[str]:
     return codigos
 
 
-
 def texto_request(req: PrediccionRequest) -> str:
     return " ".join([
         req.procedimiento_sistema or "",
@@ -30,10 +31,40 @@ def texto_request(req: PrediccionRequest) -> str:
     ]).strip()
 
 
+@lru_cache(maxsize=2)
+def cargar_sentence_transformer(model_name: str, device: str):
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise RuntimeError(
+            "Falta instalar sentence-transformers. Ejecuta: pip install -r requirements.txt"
+        ) from exc
+
+    kwargs: dict[str, Any] = {}
+    if device and device.lower() != "auto":
+        kwargs["device"] = device
+    return SentenceTransformer(model_name, **kwargs)
+
+
 def cargar_modelo(path: Path = MODEL_PATH):
     if not path.exists():
         return None
     return joblib.load(path)
+
+
+def vectorizar_texto(artefacto: dict, texto: str):
+    engine = artefacto.get("engine", "tfidf")
+    if engine == "embeddings":
+        model_name = artefacto.get("embedding_model_name") or settings.embedding_model_name
+        model = cargar_sentence_transformer(model_name, settings.embedding_device)
+        return model.encode(
+            [texto],
+            batch_size=1,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        )
+    return artefacto["vectorizer"].transform([texto])
 
 
 def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tuple[dict, float]:
@@ -45,12 +76,12 @@ def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tupl
     if not texto:
         raise ValueError("No hay texto clinico suficiente para predecir.")
 
-    vectorizer = artefacto["vectorizer"]
-    neighbors = artefacto["neighbors"]
+    neighbors: NearestNeighbors = artefacto["neighbors"]
     labels = artefacto["labels"]
     min_similarity = artefacto.get("min_similarity", settings.model_min_similarity)
 
-    distances, indices = neighbors.kneighbors(vectorizer.transform([texto]), n_neighbors=1)
+    vector = vectorizar_texto(artefacto, texto)
+    distances, indices = neighbors.kneighbors(vector, n_neighbors=1)
     similarity = 1.0 - float(distances[0][0])
     if similarity < min_similarity:
         raise ValueError("No se encontro una referencia historica suficientemente parecida.")

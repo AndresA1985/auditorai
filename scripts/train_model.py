@@ -3,6 +3,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -14,6 +15,9 @@ from sklearn.neighbors import NearestNeighbors
 
 from app.config import settings
 from app.db import fetch_all
+
+
+VALID_ENGINES = {"tfidf", "embeddings"}
 
 
 def cargar_dataset(limit: int | None = None) -> list[dict]:
@@ -81,17 +85,31 @@ def clave_codigo(label: dict) -> tuple[str, ...]:
     return separar_codigos(label["codigo_grupo_auditor"])
 
 
-def evaluar(texts: list[str], labels: list[dict], test_size: float) -> dict:
-    if len(texts) < 20:
-        return {"evaluated": False, "reason": "dataset demasiado pequeno"}
+def cargar_sentence_transformer(model_name: str, device: str):
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise RuntimeError(
+            "Falta instalar sentence-transformers. Ejecuta: pip install -r requirements.txt"
+        ) from exc
 
-    idx = list(range(len(texts)))
-    train_idx, test_idx = train_test_split(idx, test_size=test_size, random_state=42)
-    train_texts = [texts[i] for i in train_idx]
-    test_texts = [texts[i] for i in test_idx]
-    train_labels = [labels[i] for i in train_idx]
-    test_labels = [labels[i] for i in test_idx]
+    kwargs: dict[str, Any] = {}
+    if device and device.lower() != "auto":
+        kwargs["device"] = device
+    return SentenceTransformer(model_name, **kwargs)
 
+
+def generar_embeddings(model, texts: list[str], batch_size: int):
+    return model.encode(
+        texts,
+        batch_size=batch_size,
+        show_progress_bar=True,
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+    )
+
+
+def construir_tfidf(texts: list[str]):
     vectorizer = TfidfVectorizer(
         analyzer="char_wb",
         ngram_range=(3, 5),
@@ -100,12 +118,29 @@ def evaluar(texts: list[str], labels: list[dict], test_size: float) -> dict:
         min_df=2,
         max_features=250000,
     )
-    x_train = vectorizer.fit_transform(train_texts)
-    x_test = vectorizer.transform(test_texts)
+    matrix = vectorizer.fit_transform(texts)
     neighbors = NearestNeighbors(n_neighbors=1, metric="cosine", algorithm="brute")
-    neighbors.fit(x_train)
-    distances, indices = neighbors.kneighbors(x_test, n_neighbors=1)
+    neighbors.fit(matrix)
+    return {"vectorizer": vectorizer, "neighbors": neighbors}
 
+
+def construir_embeddings(texts: list[str], model_name: str, device: str, batch_size: int):
+    model = cargar_sentence_transformer(model_name, device)
+    matrix = generar_embeddings(model, texts, batch_size)
+    neighbors = NearestNeighbors(n_neighbors=1, metric="cosine", algorithm="brute")
+    neighbors.fit(matrix)
+    return {"embedding_model_name": model_name, "neighbors": neighbors}
+
+
+def construir_modelo(texts: list[str], engine: str, model_name: str, device: str, batch_size: int):
+    if engine == "tfidf":
+        return construir_tfidf(texts)
+    if engine == "embeddings":
+        return construir_embeddings(texts, model_name, device, batch_size)
+    raise ValueError("Motor de modelo no soportado: {0}".format(engine))
+
+
+def calcular_metricas(test_labels: list[dict], train_labels: list[dict], indices, distances) -> dict:
     y_true = [clave_codigo(label) for label in test_labels]
     y_pred = [clave_codigo(train_labels[int(i[0])]) for i in indices]
     similarities = [1.0 - float(d[0]) for d in distances]
@@ -119,9 +154,6 @@ def evaluar(texts: list[str], labels: list[dict], test_size: float) -> dict:
         code_overlap_scores.append(len(true_set & pred_set) / len(union) if union else 0.0)
 
     return {
-        "evaluated": True,
-        "target": "codigo_grupo_auditor",
-        "test_size": len(test_idx),
         "exact_code_group_accuracy": round(exact_code_matches / len(y_true), 4),
         "avg_code_overlap": round(sum(code_overlap_scores) / len(code_overlap_scores), 4),
         "avg_similarity": round(sum(similarities) / len(similarities), 4),
@@ -129,7 +161,61 @@ def evaluar(texts: list[str], labels: list[dict], test_size: float) -> dict:
     }
 
 
-def entrenar(output: Path, min_similarity: float, limit: int | None, test_size: float) -> dict:
+def evaluar(
+    texts: list[str],
+    labels: list[dict],
+    test_size: float,
+    engine: str,
+    model_name: str,
+    device: str,
+    batch_size: int,
+) -> dict:
+    if len(texts) < 20:
+        return {"evaluated": False, "reason": "dataset demasiado pequeno"}
+
+    idx = list(range(len(texts)))
+    train_idx, test_idx = train_test_split(idx, test_size=test_size, random_state=42)
+    train_texts = [texts[i] for i in train_idx]
+    test_texts = [texts[i] for i in test_idx]
+    train_labels = [labels[i] for i in train_idx]
+    test_labels = [labels[i] for i in test_idx]
+
+    if engine == "tfidf":
+        model_artifact = construir_tfidf(train_texts)
+        x_test = model_artifact["vectorizer"].transform(test_texts)
+    else:
+        encoder = cargar_sentence_transformer(model_name, device)
+        x_train = generar_embeddings(encoder, train_texts, batch_size)
+        model_artifact = {"neighbors": NearestNeighbors(n_neighbors=1, metric="cosine", algorithm="brute")}
+        model_artifact["neighbors"].fit(x_train)
+        x_test = generar_embeddings(encoder, test_texts, batch_size)
+
+    distances, indices = model_artifact["neighbors"].kneighbors(x_test, n_neighbors=1)
+    metrics = calcular_metricas(test_labels, train_labels, indices, distances)
+    return {
+        "evaluated": True,
+        "target": "codigo_grupo_auditor",
+        "engine": engine,
+        "embedding_model": model_name if engine == "embeddings" else "",
+        "test_size": len(test_idx),
+        **metrics,
+    }
+
+
+def entrenar(
+    output: Path,
+    min_similarity: float,
+    limit: int | None,
+    test_size: float,
+    engine: str,
+    embedding_model: str,
+    embedding_device: str,
+    embedding_batch_size: int,
+) -> dict:
+    engine = engine.lower().strip()
+    if engine not in VALID_ENGINES:
+        raise RuntimeError("AUDITORIA_MODEL_ENGINE debe ser uno de: {0}".format(", ".join(sorted(VALID_ENGINES))))
+
     rows = cargar_dataset(limit)
     texts = [texto_entrenamiento(row) for row in rows]
     labels = [etiqueta(row) for row in rows]
@@ -137,37 +223,28 @@ def entrenar(output: Path, min_similarity: float, limit: int | None, test_size: 
     if not texts:
         raise RuntimeError("No hay registros completos para entrenar.")
 
-    metrics = evaluar(texts, labels, test_size)
-
-    vectorizer = TfidfVectorizer(
-        analyzer="char_wb",
-        ngram_range=(3, 5),
-        strip_accents="unicode",
-        lowercase=True,
-        min_df=2,
-        max_features=250000,
-    )
-    matrix = vectorizer.fit_transform(texts)
-    neighbors = NearestNeighbors(n_neighbors=1, metric="cosine", algorithm="brute")
-    neighbors.fit(matrix)
+    metrics = evaluar(texts, labels, test_size, engine, embedding_model, embedding_device, embedding_batch_size)
+    model_artifact = construir_modelo(texts, engine, embedding_model, embedding_device, embedding_batch_size)
 
     artifact = {
-        "version": 2,
+        "version": 3,
         "trained_at": datetime.now().isoformat(timespec="seconds"),
+        "engine": engine,
+        "target": "codigo_grupo_auditor",
         "min_similarity": min_similarity,
-        "vectorizer": vectorizer,
-        "neighbors": neighbors,
         "labels": labels,
         "metrics": metrics,
         "training_rows": len(rows),
-        "target": "codigo_grupo_auditor",
         "unique_code_groups": len({clave_codigo(label) for label in labels}),
+        **model_artifact,
     }
 
     output.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(artifact, output)
     return {
         "output": str(output),
+        "engine": artifact["engine"],
+        "embedding_model": artifact.get("embedding_model_name", ""),
         "training_rows": artifact["training_rows"],
         "target": artifact["target"],
         "unique_code_groups": artifact["unique_code_groups"],
@@ -181,9 +258,22 @@ def main() -> None:
     parser.add_argument("--min-similarity", type=float, default=settings.model_min_similarity)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--test-size", type=float, default=settings.train_test_size)
+    parser.add_argument("--engine", choices=sorted(VALID_ENGINES), default=settings.model_engine)
+    parser.add_argument("--embedding-model", default=settings.embedding_model_name)
+    parser.add_argument("--embedding-device", default=settings.embedding_device)
+    parser.add_argument("--embedding-batch-size", type=int, default=settings.embedding_batch_size)
     args = parser.parse_args()
 
-    result = entrenar(Path(args.output), args.min_similarity, args.limit, args.test_size)
+    result = entrenar(
+        Path(args.output),
+        args.min_similarity,
+        args.limit,
+        args.test_size,
+        args.engine,
+        args.embedding_model,
+        args.embedding_device,
+        args.embedding_batch_size,
+    )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 

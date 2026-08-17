@@ -54,3 +54,28 @@ Para una prueba rapida:
     /home/virtual/auditoriai/bin/python scripts/train_model.py --limit 2000 --output models/auditai_model.joblib
 
 Cuando models/auditai_model.joblib existe, POST /predecir_codigos usa el modelo entrenado. Si no existe, usa el fallback historico anterior.
+
+## Motor neuronal con embeddings
+
+Para entrenar con SentenceTransformer en el servidor 201, agrega estas variables a `.env`:
+
+```env
+AUDITORIA_MODEL_ENGINE=embeddings
+AUDITORIA_EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+AUDITORIA_EMBEDDING_DEVICE=auto
+AUDITORIA_EMBEDDING_BATCH_SIZE=64
+```
+
+Luego instala dependencias y entrena:
+
+```bash
+cd ~/projects/auditorai
+pip install -r requirements.txt
+python scripts/train_model.py
+```
+
+Para comparar contra el baseline anterior:
+
+```bash
+python scripts/train_model.py --engine tfidf --output models/auditai_model_tfidf.joblib
+```
