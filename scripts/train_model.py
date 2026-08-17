@@ -27,9 +27,9 @@ def cargar_dataset(limit: int | None = None) -> list[dict]:
             MAX(hallazgo) AS hallazgo,
             MAX(conclusion) AS conclusion,
             codigo_grupo_auditor,
-            honorario_auditor,
-            nombre_procedimiento,
-            tiempo_anestesia,
+            MAX(honorario_auditor) AS honorario_auditor,
+            MAX(nombre_procedimiento) AS nombre_procedimiento,
+            MAX(tiempo_anestesia) AS tiempo_anestesia,
             COUNT(*) AS detalles
         FROM ap_auditoria_doctor_detalle
         WHERE estado = 1
@@ -37,16 +37,9 @@ def cargar_dataset(limit: int | None = None) -> list[dict]:
           AND hallazgo <> ''
           AND codigo_grupo_auditor IS NOT NULL
           AND codigo_grupo_auditor <> ''
-          AND honorario_auditor IS NOT NULL
-          AND honorario_auditor <> ''
-          AND nombre_procedimiento IS NOT NULL
-          AND nombre_procedimiento <> ''
         GROUP BY
             id_agenda,
-            codigo_grupo_auditor,
-            honorario_auditor,
-            nombre_procedimiento,
-            tiempo_anestesia
+            codigo_grupo_auditor
         ORDER BY MAX(fecha) ASC, id_agenda ASC
     """
     if limit:
@@ -63,6 +56,17 @@ def texto_entrenamiento(row: dict) -> str:
     ]).strip()
 
 
+def separar_codigos(valor: str) -> tuple[str, ...]:
+    if not valor:
+        return ()
+    codigos = []
+    for parte in str(valor).replace("+", ",").split(","):
+        codigo = parte.strip()
+        if codigo and codigo not in codigos:
+            codigos.append(codigo)
+    return tuple(codigos)
+
+
 def etiqueta(row: dict) -> dict:
     return {
         "id_agenda": row.get("id_agenda"),
@@ -70,19 +74,11 @@ def etiqueta(row: dict) -> dict:
         "id_empresa": row.get("id_empresa"),
         "id_seguro": row.get("id_seguro"),
         "codigo_grupo_auditor": row.get("codigo_grupo_auditor") or "",
-        "honorario_auditor": row.get("honorario_auditor") or "",
-        "nombre_procedimiento": row.get("nombre_procedimiento") or "",
-        "tiempo_anestesia": row.get("tiempo_anestesia"),
     }
 
 
-def clave_etiqueta(label: dict) -> tuple:
-    return (
-        label["codigo_grupo_auditor"],
-        label["honorario_auditor"],
-        label["nombre_procedimiento"],
-        label["tiempo_anestesia"],
-    )
+def clave_codigo(label: dict) -> tuple[str, ...]:
+    return separar_codigos(label["codigo_grupo_auditor"])
 
 
 def evaluar(texts: list[str], labels: list[dict], test_size: float) -> dict:
@@ -110,16 +106,24 @@ def evaluar(texts: list[str], labels: list[dict], test_size: float) -> dict:
     neighbors.fit(x_train)
     distances, indices = neighbors.kneighbors(x_test, n_neighbors=1)
 
-    y_true = [clave_etiqueta(label) for label in test_labels]
-    y_pred = [clave_etiqueta(train_labels[int(i[0])]) for i in indices]
+    y_true = [clave_codigo(label) for label in test_labels]
+    y_pred = [clave_codigo(train_labels[int(i[0])]) for i in indices]
     similarities = [1.0 - float(d[0]) for d in distances]
 
-    exact_matches = sum(1 for true, pred in zip(y_true, y_pred) if true == pred)
+    exact_code_matches = sum(1 for true, pred in zip(y_true, y_pred) if true == pred)
+    code_overlap_scores = []
+    for true, pred in zip(y_true, y_pred):
+        true_set = set(true)
+        pred_set = set(pred)
+        union = true_set | pred_set
+        code_overlap_scores.append(len(true_set & pred_set) / len(union) if union else 0.0)
 
     return {
         "evaluated": True,
+        "target": "codigo_grupo_auditor",
         "test_size": len(test_idx),
-        "exact_label_accuracy": round(exact_matches / len(y_true), 4),
+        "exact_code_group_accuracy": round(exact_code_matches / len(y_true), 4),
+        "avg_code_overlap": round(sum(code_overlap_scores) / len(code_overlap_scores), 4),
         "avg_similarity": round(sum(similarities) / len(similarities), 4),
         "min_similarity": round(min(similarities), 4),
     }
@@ -148,7 +152,7 @@ def entrenar(output: Path, min_similarity: float, limit: int | None, test_size: 
     neighbors.fit(matrix)
 
     artifact = {
-        "version": 1,
+        "version": 2,
         "trained_at": datetime.now().isoformat(timespec="seconds"),
         "min_similarity": min_similarity,
         "vectorizer": vectorizer,
@@ -156,7 +160,8 @@ def entrenar(output: Path, min_similarity: float, limit: int | None, test_size: 
         "labels": labels,
         "metrics": metrics,
         "training_rows": len(rows),
-        "unique_labels": len({clave_etiqueta(label) for label in labels}),
+        "target": "codigo_grupo_auditor",
+        "unique_code_groups": len({clave_codigo(label) for label in labels}),
     }
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -164,7 +169,8 @@ def entrenar(output: Path, min_similarity: float, limit: int | None, test_size: 
     return {
         "output": str(output),
         "training_rows": artifact["training_rows"],
-        "unique_labels": artifact["unique_labels"],
+        "target": artifact["target"],
+        "unique_code_groups": artifact["unique_code_groups"],
         "metrics": metrics,
     }
 

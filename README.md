@@ -1,6 +1,6 @@
 # auditai
 
-Servicio FastAPI local para sugerir codigos auditor, honorarios por codigo, tiempo de anestesia y nombre de procedimiento desde el historico local de `ap_auditoria_doctor_detalle`.
+Servicio FastAPI local para sugerir `codigo_grupo_auditor` desde el historico local de `ap_auditoria_doctor_detalle`.
 
 ## Instalacion
 
@@ -43,7 +43,7 @@ Ejemplo de respuesta esperada por Aitrol:
 ```
 ## Entrenar modelo
 
-El entrenamiento lee ap_auditoria_doctor_detalle desde MySQL, agrupa por agenda auditada y genera un artefacto local en models/auditai_model.joblib.
+El entrenamiento lee ap_auditoria_doctor_detalle desde MySQL y entrena un modelo enfocado en predecir `codigo_grupo_auditor`. Genera un artefacto local en models/auditai_model.joblib.
 
     cd /home/anakin/projects/auditorai
     /home/virtual/auditoriai/bin/python -m pip install -r requirements.txt

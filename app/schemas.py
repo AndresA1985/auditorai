@@ -24,7 +24,7 @@ class PrediccionPayload(BaseModel):
     honorarios_codigo: Dict[str, str]
     honorario: str
     tiempo_anestesia: Union[int, str, None] = None
-    nombre_procedimiento: str
+    nombre_procedimiento: str = ""
     observacion_auditor: str
 
 

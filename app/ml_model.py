@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import List, Tuple
 
 import joblib
 
@@ -20,18 +20,6 @@ def separar_codigos(valor: str) -> List[str]:
             codigos.append(codigo)
     return codigos
 
-
-def parse_honorarios(valor: str, codigos: Iterable[str]) -> Dict[str, str]:
-    honorarios: Dict[str, str] = {}
-    if valor:
-        for codigo, porcentaje in re.findall(r"([^(),+]+)\(([^()]*)\)", str(valor)):
-            codigo = codigo.strip()
-            porcentaje = porcentaje.strip()
-            if codigo and porcentaje:
-                honorarios[codigo] = porcentaje
-    for codigo in codigos:
-        honorarios.setdefault(codigo, "100")
-    return honorarios
 
 
 def texto_request(req: PrediccionRequest) -> str:
@@ -69,14 +57,12 @@ def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tupl
 
     label = labels[int(indices[0][0])]
     codigos = separar_codigos(label["codigo_grupo_auditor"])
-    honorarios_codigo = parse_honorarios(label["honorario_auditor"], codigos)
-    honorario = ",".join("{0}({1})".format(codigo, honorarios_codigo[codigo]) for codigo in codigos)
 
     return {
         "codigos": codigos,
-        "honorarios_codigo": honorarios_codigo,
-        "honorario": honorario,
-        "tiempo_anestesia": label.get("tiempo_anestesia") or "",
-        "nombre_procedimiento": label.get("nombre_procedimiento") or "",
-        "observacion_auditor": "Propuesta generada por IA; validar antes de guardar.",
+        "honorarios_codigo": {},
+        "honorario": "",
+        "tiempo_anestesia": "",
+        "nombre_procedimiento": "",
+        "observacion_auditor": "Codigos propuestos por IA; validar antes de guardar.",
     }, similarity
