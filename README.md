@@ -53,6 +53,12 @@ Para una prueba rapida:
 
     /home/virtual/auditoriai/bin/python scripts/train_model.py --limit 2000 --output models/auditai_model.joblib
 
+El entrenamiento evalua con una particion 70/15/15:
+
+- 70% train: casos usados para construir el espacio vectorial y buscar vecinos.
+- 15% validation: casos usados para comparar motores, modelos y umbrales.
+- 15% test final: casos reservados para reportar la metrica final.
+
 Cuando models/auditai_model.joblib existe, POST /predecir_codigos usa el modelo entrenado. Si no existe, usa el fallback historico anterior.
 
 ## Motor neuronal con embeddings
@@ -64,6 +70,8 @@ AUDITORIA_MODEL_ENGINE=embeddings
 AUDITORIA_EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 AUDITORIA_EMBEDDING_DEVICE=auto
 AUDITORIA_EMBEDDING_BATCH_SIZE=64
+AUDITORIA_VALIDATION_SIZE=0.15
+AUDITORIA_TEST_SIZE=0.15
 ```
 
 Luego instala dependencias y entrena:

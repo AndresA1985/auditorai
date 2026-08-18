@@ -85,6 +85,31 @@ def clave_codigo(label: dict) -> tuple[str, ...]:
     return separar_codigos(label["codigo_grupo_auditor"])
 
 
+def validar_split(validation_size: float, test_size: float) -> None:
+    if validation_size <= 0 or test_size <= 0:
+        raise RuntimeError("validation_size y test_size deben ser mayores que 0.")
+    if validation_size + test_size >= 1:
+        raise RuntimeError("validation_size + test_size debe ser menor que 1.")
+
+
+def dividir_indices(total: int, validation_size: float, test_size: float) -> dict[str, list[int]]:
+    validar_split(validation_size, test_size)
+    idx = list(range(total))
+    holdout_size = validation_size + test_size
+    train_idx, holdout_idx = train_test_split(idx, test_size=holdout_size, random_state=42)
+    relative_test_size = test_size / holdout_size
+    validation_idx, test_idx = train_test_split(
+        holdout_idx,
+        test_size=relative_test_size,
+        random_state=42,
+    )
+    return {"train": train_idx, "validation": validation_idx, "test": test_idx}
+
+
+def seleccionar(items: list, indices: list[int]) -> list:
+    return [items[i] for i in indices]
+
+
 def cargar_sentence_transformer(model_name: str, device: str):
     try:
         from sentence_transformers import SentenceTransformer
@@ -140,8 +165,8 @@ def construir_modelo(texts: list[str], engine: str, model_name: str, device: str
     raise ValueError("Motor de modelo no soportado: {0}".format(engine))
 
 
-def calcular_metricas(test_labels: list[dict], train_labels: list[dict], indices, distances) -> dict:
-    y_true = [clave_codigo(label) for label in test_labels]
+def calcular_metricas(eval_labels: list[dict], train_labels: list[dict], indices, distances) -> dict:
+    y_true = [clave_codigo(label) for label in eval_labels]
     y_pred = [clave_codigo(train_labels[int(i[0])]) for i in indices]
     similarities = [1.0 - float(d[0]) for d in distances]
 
@@ -161,9 +186,18 @@ def calcular_metricas(test_labels: list[dict], train_labels: list[dict], indices
     }
 
 
+def evaluar_particion(nombre: str, labels: list[dict], train_labels: list[dict], indices, distances) -> dict:
+    return {
+        "name": nombre,
+        "size": len(labels),
+        **calcular_metricas(labels, train_labels, indices, distances),
+    }
+
+
 def evaluar(
     texts: list[str],
     labels: list[dict],
+    validation_size: float,
     test_size: float,
     engine: str,
     model_name: str,
@@ -173,32 +207,56 @@ def evaluar(
     if len(texts) < 20:
         return {"evaluated": False, "reason": "dataset demasiado pequeno"}
 
-    idx = list(range(len(texts)))
-    train_idx, test_idx = train_test_split(idx, test_size=test_size, random_state=42)
-    train_texts = [texts[i] for i in train_idx]
-    test_texts = [texts[i] for i in test_idx]
-    train_labels = [labels[i] for i in train_idx]
-    test_labels = [labels[i] for i in test_idx]
+    split_idx = dividir_indices(len(texts), validation_size, test_size)
+    train_texts = seleccionar(texts, split_idx["train"])
+    validation_texts = seleccionar(texts, split_idx["validation"])
+    test_texts = seleccionar(texts, split_idx["test"])
+    train_labels = seleccionar(labels, split_idx["train"])
+    validation_labels = seleccionar(labels, split_idx["validation"])
+    test_labels = seleccionar(labels, split_idx["test"])
 
     if engine == "tfidf":
         model_artifact = construir_tfidf(train_texts)
+        x_validation = model_artifact["vectorizer"].transform(validation_texts)
         x_test = model_artifact["vectorizer"].transform(test_texts)
     else:
         encoder = cargar_sentence_transformer(model_name, device)
         x_train = generar_embeddings(encoder, train_texts, batch_size)
         model_artifact = {"neighbors": NearestNeighbors(n_neighbors=1, metric="cosine", algorithm="brute")}
         model_artifact["neighbors"].fit(x_train)
+        x_validation = generar_embeddings(encoder, validation_texts, batch_size)
         x_test = generar_embeddings(encoder, test_texts, batch_size)
 
-    distances, indices = model_artifact["neighbors"].kneighbors(x_test, n_neighbors=1)
-    metrics = calcular_metricas(test_labels, train_labels, indices, distances)
+    validation_distances, validation_indices = model_artifact["neighbors"].kneighbors(x_validation, n_neighbors=1)
+    test_distances, test_indices = model_artifact["neighbors"].kneighbors(x_test, n_neighbors=1)
+
     return {
         "evaluated": True,
         "target": "codigo_grupo_auditor",
         "engine": engine,
         "embedding_model": model_name if engine == "embeddings" else "",
-        "test_size": len(test_idx),
-        **metrics,
+        "split": {
+            "train_size": len(train_texts),
+            "validation_size": len(validation_texts),
+            "test_size": len(test_texts),
+            "train_fraction": round(len(train_texts) / len(texts), 4),
+            "validation_fraction": round(len(validation_texts) / len(texts), 4),
+            "test_fraction": round(len(test_texts) / len(texts), 4),
+        },
+        "validation_metrics": evaluar_particion(
+            "validation",
+            validation_labels,
+            train_labels,
+            validation_indices,
+            validation_distances,
+        ),
+        "final_test_metrics": evaluar_particion(
+            "test",
+            test_labels,
+            train_labels,
+            test_indices,
+            test_distances,
+        ),
     }
 
 
@@ -206,6 +264,7 @@ def entrenar(
     output: Path,
     min_similarity: float,
     limit: int | None,
+    validation_size: float,
     test_size: float,
     engine: str,
     embedding_model: str,
@@ -223,17 +282,27 @@ def entrenar(
     if not texts:
         raise RuntimeError("No hay registros completos para entrenar.")
 
-    metrics = evaluar(texts, labels, test_size, engine, embedding_model, embedding_device, embedding_batch_size)
+    evaluation = evaluar(
+        texts,
+        labels,
+        validation_size,
+        test_size,
+        engine,
+        embedding_model,
+        embedding_device,
+        embedding_batch_size,
+    )
     model_artifact = construir_modelo(texts, engine, embedding_model, embedding_device, embedding_batch_size)
 
     artifact = {
-        "version": 3,
+        "version": 4,
         "trained_at": datetime.now().isoformat(timespec="seconds"),
         "engine": engine,
         "target": "codigo_grupo_auditor",
         "min_similarity": min_similarity,
         "labels": labels,
-        "metrics": metrics,
+        "evaluation": evaluation,
+        "metrics": evaluation.get("final_test_metrics", evaluation),
         "training_rows": len(rows),
         "unique_code_groups": len({clave_codigo(label) for label in labels}),
         **model_artifact,
@@ -248,7 +317,7 @@ def entrenar(
         "training_rows": artifact["training_rows"],
         "target": artifact["target"],
         "unique_code_groups": artifact["unique_code_groups"],
-        "metrics": metrics,
+        "evaluation": evaluation,
     }
 
 
@@ -257,7 +326,8 @@ def main() -> None:
     parser.add_argument("--output", default=str(settings.model_path))
     parser.add_argument("--min-similarity", type=float, default=settings.model_min_similarity)
     parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--test-size", type=float, default=settings.train_test_size)
+    parser.add_argument("--validation-size", type=float, default=settings.validation_size)
+    parser.add_argument("--test-size", type=float, default=settings.test_size)
     parser.add_argument("--engine", choices=sorted(VALID_ENGINES), default=settings.model_engine)
     parser.add_argument("--embedding-model", default=settings.embedding_model_name)
     parser.add_argument("--embedding-device", default=settings.embedding_device)
@@ -268,6 +338,7 @@ def main() -> None:
         Path(args.output),
         args.min_similarity,
         args.limit,
+        args.validation_size,
         args.test_size,
         args.engine,
         args.embedding_model,
