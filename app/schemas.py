@@ -19,9 +19,16 @@ class PrediccionRequest(BaseModel):
     descripcion_estudio_013: Optional[str] = None
 
 
+class CodigoScore(BaseModel):
+    codigo: str
+    score: float
+    selected: bool = False
+
+
 class PrediccionPayload(BaseModel):
     codigos: List[str]
     codigo_scores: Dict[str, float] = Field(default_factory=dict)
+    codigo_ranking: List[CodigoScore] = Field(default_factory=list)
     honorarios_codigo: Dict[str, str]
     honorario: str
     tiempo_anestesia: Union[int, str, None] = None

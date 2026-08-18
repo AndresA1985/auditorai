@@ -117,3 +117,23 @@ AUDITORIA_MODEL_PATH=models/auditai_multilabel_tfidf_logreg.joblib
 ```
 
 El predictor detecta automaticamente si el `.joblib` es `tfidf_logistic_regression_multilabel` y devuelve `codigo_scores` con las probabilidades seleccionadas por codigo.
+
+
+## Fine-tuning Transformer multi-label
+
+Entrena un encoder Transformer pre-entrenado para clasificacion multi-label de codigo_grupo_auditor.
+Entrada: procedimiento_auditor/nombre_procedimiento + hallazgo + conclusion.
+Salida: vector multi-label con los codigos historicos disponibles.
+
+Comando sugerido en el servidor 201:
+
+    cd ~/projects/auditorai
+    python scripts/train_transformer_multilabel.py --encoder-model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 --epochs 3 --learning-rate 2e-5 --batch-size 8 --eval-batch-size 16 --thresholds 0.45,0.50,0.55,0.60,0.65 --selection-metric avg_dice --fp16 --output models/auditai_transformer_multilabel.joblib --model-dir models/auditai_transformer_multilabel_hf
+
+El entrenamiento usa BCEWithLogitsLoss, split 70/15/15, y reporta precision, recall, F1, Dice, Jaccard/overlap y exact match.
+
+Para usarlo en /predecir_codigos, apunta el .env al artefacto generado:
+
+    AUDITORIA_MODEL_PATH=models/auditai_transformer_multilabel.joblib
+
+La respuesta del predictor incluye codigo_scores para los codigos seleccionados y codigo_ranking con los mejores scores aunque no pasen el threshold. Ese ranking sirve para diagnosticar casos como 43273 vs 43259.

@@ -11,6 +11,7 @@ from .config import settings
 from .schemas import PrediccionRequest
 
 MODEL_PATH = settings.model_path
+DEFAULT_RANKING_LIMIT = 15
 
 
 def separar_codigos(valor: str) -> List[str]:
@@ -47,10 +48,34 @@ def cargar_sentence_transformer(model_name: str, device: str):
     return SentenceTransformer(model_name, **kwargs)
 
 
+@lru_cache(maxsize=2)
+def cargar_transformer_multilabel(model_dir: str, device: str):
+    try:
+        import torch
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    except ImportError as exc:
+        raise RuntimeError(
+            "Falta instalar torch/transformers. Ejecuta: pip install -r requirements.txt"
+        ) from exc
+
+    resolved_device = device
+    if not resolved_device or resolved_device.lower() == "auto":
+        resolved_device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+    model.to(resolved_device)
+    model.eval()
+    return tokenizer, model, resolved_device, torch
+
+
 def cargar_modelo(path: Path = MODEL_PATH):
     if not path.exists():
         return None
-    return joblib.load(path)
+    artefacto = joblib.load(path)
+    if isinstance(artefacto, dict):
+        artefacto["_artifact_path"] = str(path)
+    return artefacto
 
 
 def vectorizar_texto(artefacto: dict, texto: str):
@@ -97,16 +122,65 @@ def predecir_multilabel(artefacto: dict, texto: str) -> Tuple[dict, float]:
         )
         if str(codigo) in codigos
     }
+    codigo_ranking = [
+        {"codigo": str(codigo), "score": round(float(score_item), 4), "selected": str(codigo) in codigos}
+        for codigo, score_item in sorted(
+            zip(label_binarizer.classes_, probabilities),
+            key=lambda item: float(item[1]),
+            reverse=True,
+        )[:DEFAULT_RANKING_LIMIT]
+    ]
     score = max(codigo_scores.values()) if codigo_scores else 0.0
 
     return {
         "codigos": codigos,
         "codigo_scores": codigo_scores,
+        "codigo_ranking": codigo_ranking,
         "honorarios_codigo": {},
         "honorario": "",
         "tiempo_anestesia": "",
         "nombre_procedimiento": "",
         "observacion_auditor": "Codigos propuestos por clasificador multi-label; validar antes de guardar.",
+    }, score
+
+def resolver_model_dir(artefacto: dict) -> Path:
+    model_dir = Path(str(artefacto["model_dir"]))
+    if model_dir.is_absolute():
+        return model_dir
+    artifact_path = Path(str(artefacto.get("_artifact_path") or MODEL_PATH))
+    return artifact_path.parent / model_dir
+
+
+def predecir_transformer_multilabel(artefacto: dict, texto: str) -> Tuple[dict, float]:
+    model_dir = resolver_model_dir(artefacto)
+    tokenizer, model, device, torch = cargar_transformer_multilabel(str(model_dir), settings.embedding_device)
+    max_length = int(artefacto.get("max_length", 512))
+    threshold = float(artefacto.get("threshold", 0.5))
+    min_labels = int(artefacto.get("min_labels", 1))
+    classes = artefacto["classes"]
+    encoded = tokenizer(texto, truncation=True, max_length=max_length, padding=False, return_tensors="pt")
+    encoded = {key: value.to(device) for key, value in encoded.items()}
+    with torch.no_grad():
+        probabilities = torch.sigmoid(model(**encoded).logits[0]).detach().cpu().numpy()
+    selected = binarizar_con_threshold(probabilities, threshold, min_labels)
+    codigos = [str(codigo) for codigo, keep in zip(classes, selected) if keep]
+    score_by_code = {str(codigo): round(float(score), 4) for codigo, score in zip(classes, probabilities)}
+    codigos.sort(key=lambda codigo: score_by_code[codigo], reverse=True)
+    codigo_scores = {codigo: score_by_code[codigo] for codigo in codigos}
+    codigo_ranking = [
+        {"codigo": str(codigo), "score": round(float(score_item), 4), "selected": bool(keep)}
+        for codigo, score_item, keep in sorted(zip(classes, probabilities, selected), key=lambda item: float(item[1]), reverse=True)[:DEFAULT_RANKING_LIMIT]
+    ]
+    score = max(codigo_scores.values()) if codigo_scores else 0.0
+    return {
+        "codigos": codigos,
+        "codigo_scores": codigo_scores,
+        "codigo_ranking": codigo_ranking,
+        "honorarios_codigo": {},
+        "honorario": "",
+        "tiempo_anestesia": "",
+        "nombre_procedimiento": "",
+        "observacion_auditor": "Codigos propuestos por Transformer fine-tuneado multi-label; validar antes de guardar.",
     }, score
 
 
@@ -126,6 +200,8 @@ def predecir_vecino(artefacto: dict, texto: str) -> Tuple[dict, float]:
 
     return {
         "codigos": codigos,
+        "codigo_scores": {},
+        "codigo_ranking": [],
         "honorarios_codigo": {},
         "honorario": "",
         "tiempo_anestesia": "",
@@ -143,7 +219,10 @@ def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tupl
     if not texto:
         raise ValueError("No hay texto clinico suficiente para predecir.")
 
-    if artefacto.get("model") == "tfidf_logistic_regression_multilabel":
+    model_type = artefacto.get("model")
+    if model_type == "tfidf_logistic_regression_multilabel":
         return predecir_multilabel(artefacto, texto)
+    if model_type == "transformer_multilabel":
+        return predecir_transformer_multilabel(artefacto, texto)
 
     return predecir_vecino(artefacto, texto)
