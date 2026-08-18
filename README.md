@@ -87,3 +87,24 @@ Para comparar contra el baseline anterior:
 ```bash
 python scripts/train_model.py --engine tfidf --output models/auditai_model_tfidf.joblib
 ```
+
+## Clasificador multi-label
+
+Entrena un baseline supervisado `TF-IDF + LogisticRegression` para predecir codigos individuales de `codigo_grupo_auditor`:
+
+```bash
+cd ~/projects/auditorai
+python scripts/train_multilabel.py \
+  --c-values 0.5,1.0,2.0 \
+  --thresholds 0.20,0.30,0.40,0.50 \
+  --selection-metric avg_dice \
+  --output models/auditai_multilabel_tfidf_logreg.joblib
+```
+
+El script usa el split 70/15/15. Selecciona `C` y `threshold` con validation y reporta el resultado final en test con metricas de precision, recall, F1, Dice y overlap.
+
+Para generar un artefacto final entrenado con todos los datos despues de evaluar:
+
+```bash
+python scripts/train_multilabel.py --final-fit-all
+```
