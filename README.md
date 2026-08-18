@@ -98,6 +98,7 @@ python scripts/train_multilabel.py \
   --c-values 0.5,1.0,2.0 \
   --thresholds 0.20,0.30,0.40,0.50 \
   --selection-metric avg_dice \
+  --n-jobs 1 \
   --output models/auditai_multilabel_tfidf_logreg.joblib
 ```
 

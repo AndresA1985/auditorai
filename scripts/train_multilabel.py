@@ -284,7 +284,7 @@ def main() -> None:
     parser.add_argument("--min-df", type=int, default=2)
     parser.add_argument("--max-features", type=int, default=250000)
     parser.add_argument("--max-iter", type=int, default=1000)
-    parser.add_argument("--n-jobs", type=int, default=-1)
+    parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument("--class-weight", choices=["balanced", "none"], default="balanced")
     parser.add_argument("--final-fit-all", action="store_true", help="Reentrena el artefacto final con todo el dataset usando los mejores parametros.")
     args = parser.parse_args()
