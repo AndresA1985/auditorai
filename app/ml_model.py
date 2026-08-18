@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, List, Tuple
 
 import joblib
+import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
 from .config import settings
@@ -67,15 +68,49 @@ def vectorizar_texto(artefacto: dict, texto: str):
     return artefacto["vectorizer"].transform([texto])
 
 
-def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tuple[dict, float]:
-    artefacto = cargar_modelo(path)
-    if not artefacto:
-        raise ValueError("Modelo ML no entrenado.")
+def binarizar_con_threshold(probabilities: np.ndarray, threshold: float, min_labels: int) -> np.ndarray:
+    pred = probabilities >= threshold
+    if min_labels > 0 and pred.sum() < min_labels:
+        top_n = min(min_labels, probabilities.shape[0])
+        top_idx = np.argpartition(probabilities, -top_n)[-top_n:]
+        pred[top_idx] = True
+    return pred
 
-    texto = texto_request(req)
-    if not texto:
-        raise ValueError("No hay texto clinico suficiente para predecir.")
 
+def predecir_multilabel(artefacto: dict, texto: str) -> Tuple[dict, float]:
+    vector = artefacto["vectorizer"].transform([texto])
+    probabilities = artefacto["classifier"].predict_proba(vector)[0]
+    threshold = float(artefacto.get("threshold", 0.5))
+    min_labels = int(artefacto.get("min_labels", 1))
+    label_binarizer = artefacto["label_binarizer"]
+
+    selected = binarizar_con_threshold(probabilities, threshold, min_labels)
+    codigos = [str(codigo) for codigo, keep in zip(label_binarizer.classes_, selected) if keep]
+    codigos.sort(key=lambda codigo: float(probabilities[list(label_binarizer.classes_).index(codigo)]), reverse=True)
+
+    codigo_scores = {
+        str(codigo): round(float(score), 4)
+        for codigo, score in sorted(
+            zip(label_binarizer.classes_, probabilities),
+            key=lambda item: float(item[1]),
+            reverse=True,
+        )
+        if str(codigo) in codigos
+    }
+    score = max(codigo_scores.values()) if codigo_scores else 0.0
+
+    return {
+        "codigos": codigos,
+        "codigo_scores": codigo_scores,
+        "honorarios_codigo": {},
+        "honorario": "",
+        "tiempo_anestesia": "",
+        "nombre_procedimiento": "",
+        "observacion_auditor": "Codigos propuestos por clasificador multi-label; validar antes de guardar.",
+    }, score
+
+
+def predecir_vecino(artefacto: dict, texto: str) -> Tuple[dict, float]:
     neighbors: NearestNeighbors = artefacto["neighbors"]
     labels = artefacto["labels"]
     min_similarity = artefacto.get("min_similarity", settings.model_min_similarity)
@@ -97,3 +132,18 @@ def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tupl
         "nombre_procedimiento": "",
         "observacion_auditor": "Codigos propuestos por IA; validar antes de guardar.",
     }, similarity
+
+
+def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tuple[dict, float]:
+    artefacto = cargar_modelo(path)
+    if not artefacto:
+        raise ValueError("Modelo ML no entrenado.")
+
+    texto = texto_request(req)
+    if not texto:
+        raise ValueError("No hay texto clinico suficiente para predecir.")
+
+    if artefacto.get("model") == "tfidf_logistic_regression_multilabel":
+        return predecir_multilabel(artefacto, texto)
+
+    return predecir_vecino(artefacto, texto)

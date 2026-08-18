@@ -109,3 +109,11 @@ Para generar un artefacto final entrenado con todos los datos despues de evaluar
 ```bash
 python scripts/train_multilabel.py --final-fit-all
 ```
+
+Para usar el artefacto multi-label en el endpoint `/predecir_codigos`, apunta el `.env` al modelo generado:
+
+```env
+AUDITORIA_MODEL_PATH=models/auditai_multilabel_tfidf_logreg.joblib
+```
+
+El predictor detecta automaticamente si el `.joblib` es `tfidf_logistic_regression_multilabel` y devuelve `codigo_scores` con las probabilidades seleccionadas por codigo.
