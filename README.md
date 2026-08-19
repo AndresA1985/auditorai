@@ -137,3 +137,27 @@ Para usarlo en /predecir_codigos, apunta el .env al artefacto generado:
     AUDITORIA_MODEL_PATH=models/auditai_transformer_multilabel.joblib
 
 La respuesta del predictor incluye codigo_scores para los codigos seleccionados y codigo_ranking con los mejores scores aunque no pasen el threshold. Ese ranking sirve para diagnosticar casos como 43273 vs 43259.
+
+
+## Plantillas como referencia estructurada
+
+Las plantillas de auditoria se indexan como conocimiento experto local. Solo se toman items tipo P desde ap_plantilla_items + ap_procedimiento; por defecto se excluye 99204 porque corresponde a consulta y no al procedimiento auditado.
+
+Construir el artefacto de plantillas:
+
+    cd ~/projects/auditorai
+    python scripts/build_template_reference.py --output models/auditai_template_reference.joblib --exclude-codes 99204
+
+Cuando models/auditai_template_reference.joblib existe, /predecir_codigos combina la prediccion del modelo con candidatos de plantillas y devuelve plantilla_ranking.
+
+Evaluar offline modelo solo vs plantillas vs hibrido:
+
+    cd ~/projects/auditorai
+    python scripts/evaluate_hybrid.py --model models/auditai_multilabel_tfidf_logreg.joblib
+
+Probar un encoder medico espanol y compararlo contra el hibrido:
+
+    cd ~/projects/auditorai
+    python scripts/train_transformer_multilabel.py --encoder-model PlanTL-GOB-ES/roberta-base-biomedical-clinical-es --epochs 5 --learning-rate 2e-5 --batch-size 8 --eval-batch-size 16 --thresholds 0.20,0.25,0.30,0.35,0.40,0.45,0.50 --selection-metric avg_dice --min-labels 2 --fp16 --output models/auditai_transformer_biomedical_es.joblib --model-dir models/auditai_transformer_biomedical_es_hf
+
+    python scripts/evaluate_hybrid.py --model models/auditai_transformer_biomedical_es.joblib

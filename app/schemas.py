@@ -25,10 +25,19 @@ class CodigoScore(BaseModel):
     selected: bool = False
 
 
+class PlantillaScore(BaseModel):
+    cod_plantilla: str
+    descripcion: str = Field(default='')
+    desc_comp: str = Field(default='')
+    codigos: List[str] = Field(default_factory=list)
+    score: float
+
+
 class PrediccionPayload(BaseModel):
     codigos: List[str]
     codigo_scores: Dict[str, float] = Field(default_factory=dict)
     codigo_ranking: List[CodigoScore] = Field(default_factory=list)
+    plantilla_ranking: List[PlantillaScore] = Field(default_factory=list)
     honorarios_codigo: Dict[str, str]
     honorario: str
     tiempo_anestesia: Union[int, str, None] = None

@@ -7,6 +7,7 @@ from .config import settings
 from .db import fetch_all
 from .ml_model import MODEL_PATH, predecir_con_modelo
 from .schemas import PrediccionRequest
+from .template_reference import enriquecer_prediccion_con_plantillas
 
 STOPWORDS = {
     "a", "al", "ante", "bajo", "con", "contra", "de", "del", "desde", "el", "en",
@@ -139,7 +140,8 @@ def puntuar(req: PrediccionRequest, row: dict, entrada_tokens: Counter) -> float
 
 def predecir(req: PrediccionRequest) -> Tuple[dict, float]:
     if MODEL_PATH.exists():
-        return predecir_con_modelo(req)
+        prediccion, score = predecir_con_modelo(req)
+        return enriquecer_prediccion_con_plantillas(texto_request(req), prediccion, score)
 
     entrada = tokens(texto_request(req))
     grupos = buscar_grupos_historicos(req)
