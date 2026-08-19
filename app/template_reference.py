@@ -163,38 +163,17 @@ def puntajes_plantillas(texto: str, min_similarity: float = DEFAULT_MIN_SIMILARI
     return code_scores, accepted
 
 
-def enriquecer_prediccion_con_plantillas(texto: str, prediccion: dict, score: float) -> tuple[dict, float]:
-    template_scores, matches = puntajes_plantillas(texto)
-    if not template_scores:
-        prediccion.setdefault('plantilla_ranking', [])
-        return prediccion, score
-
-    current_scores = {str(code): float(value) for code, value in (prediccion.get('codigo_scores') or {}).items()}
-    for item in prediccion.get('codigo_ranking') or []:
-        current_scores.setdefault(str(item.get('codigo')), float(item.get('score') or 0.0))
-
-    combined_scores = dict(current_scores)
-    for code, template_score in template_scores.items():
-        base = combined_scores.get(code, 0.0)
-        combined_scores[code] = min(1.0, base + (template_score * DEFAULT_TEMPLATE_BONUS))
-
-    selected = set(str(code) for code in prediccion.get('codigos') or [])
-    selected.update(template_scores.keys())
-    codigos = sorted(selected, key=lambda code: combined_scores.get(code, 0.0), reverse=True)
-
-    ranking = [
-        {
-            'codigo': code,
-            'score': round(float(value), 4),
-            'selected': code in selected,
-        }
-        for code, value in sorted(combined_scores.items(), key=lambda item: item[1], reverse=True)[:DEFAULT_RANKING_LIMIT]
-    ]
-
+def anexar_soporte_plantillas(texto: str, prediccion: dict, score: float) -> tuple[dict, float]:
+    _, matches = puntajes_plantillas(texto)
     prediccion = dict(prediccion)
-    prediccion['codigos'] = codigos
-    prediccion['codigo_scores'] = {code: round(float(combined_scores.get(code, 0.0)), 4) for code in codigos}
-    prediccion['codigo_ranking'] = ranking
     prediccion['plantilla_ranking'] = matches
-    prediccion['observacion_auditor'] = (prediccion.get('observacion_auditor') or '').rstrip('.') + '; reforzado con plantillas historicas cuando hubo coincidencia.'
-    return prediccion, max(score, max(prediccion['codigo_scores'].values(), default=score))
+    if matches:
+        prediccion['observacion_auditor'] = (
+            prediccion.get('observacion_auditor') or ''
+        ).rstrip('.') + '; plantillas historicas disponibles solo como soporte visual.'
+    return prediccion, score
+
+
+# Compatibilidad con llamadas anteriores: ahora solo adjunta soporte visual.
+def enriquecer_prediccion_con_plantillas(texto: str, prediccion: dict, score: float) -> tuple[dict, float]:
+    return anexar_soporte_plantillas(texto, prediccion, score)

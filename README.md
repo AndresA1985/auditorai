@@ -148,9 +148,9 @@ Construir el artefacto de plantillas:
     cd ~/projects/auditorai
     python scripts/build_template_reference.py --output models/auditai_template_reference.joblib --exclude-codes 99204
 
-Cuando models/auditai_template_reference.joblib existe, /predecir_codigos combina la prediccion del modelo con candidatos de plantillas y devuelve plantilla_ranking.
+Cuando models/auditai_template_reference.joblib existe, /predecir_codigos mantiene intactos los codigos del modelo principal y devuelve plantilla_ranking solo como soporte visual para el auditor.
 
-Evaluar offline modelo solo vs plantillas vs hibrido:
+Evaluar offline modelo y cobertura de plantillas:
 
     cd ~/projects/auditorai
     python scripts/evaluate_hybrid.py --model models/auditai_multilabel_tfidf_logreg.joblib
@@ -161,3 +161,20 @@ Probar un encoder medico espanol y compararlo contra el hibrido:
     python scripts/train_transformer_multilabel.py --encoder-model PlanTL-GOB-ES/roberta-base-biomedical-clinical-es --epochs 5 --learning-rate 2e-5 --batch-size 8 --eval-batch-size 16 --thresholds 0.20,0.25,0.30,0.35,0.40,0.45,0.50 --selection-metric avg_dice --min-labels 2 --fp16 --output models/auditai_transformer_biomedical_es.joblib --model-dir models/auditai_transformer_biomedical_es_hf
 
     python scripts/evaluate_hybrid.py --model models/auditai_transformer_biomedical_es.joblib
+
+
+## Modelo de honorarios por codigo
+
+El modelo de codigos no se cambia. Despues de generar codigo_grupo_auditor, se usa un segundo artefacto para sugerir el porcentaje de honorario por cada codigo generado. Si no existe models/auditai_honorarios.joblib, el sistema conserva el fallback de 100%.
+
+Primer baseline recomendado, mayoria historica por codigo:
+
+    cd ~/projects/auditorai
+    python scripts/train_honorarios.py --engine code_majority --final-fit-all --output models/auditai_honorarios.joblib
+
+Prueba alternativa para comparar si el texto aporta informacion adicional:
+
+    cd ~/projects/auditorai
+    python scripts/train_honorarios.py --engine tfidf_logreg --class-weight balanced --final-fit-all --output models/auditai_honorarios_tfidf.joblib
+
+El resultado reporta accuracy, macro_f1, weighted_f1, matriz de confusion y reporte por clase para porcentajes 50 y 100.
