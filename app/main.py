@@ -34,3 +34,7 @@ def predecir_codigos(req: PrediccionRequest):
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Error generando prediccion: {0}".format(exc))
+
+@app.post("/predecir_auditoria", response_model=PrediccionResponse)
+def predecir_auditoria(req: PrediccionRequest):
+    return predecir_codigos(req)
