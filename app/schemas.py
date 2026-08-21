@@ -41,6 +41,7 @@ class PrediccionPayload(BaseModel):
     honorarios_codigo: Dict[str, str]
     honorario: str
     tiempo_anestesia: Union[int, str, None] = None
+    tiempos_anestesia_codigo: Dict[str, Union[int, str]] = Field(default_factory=dict)
     nombre_procedimiento: str = ""
     observacion_auditor: str
 

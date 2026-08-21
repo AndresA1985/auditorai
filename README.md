@@ -178,3 +178,19 @@ Prueba alternativa para comparar si el texto aporta informacion adicional:
     python scripts/train_honorarios.py --engine tfidf_logreg --class-weight balanced --final-fit-all --output models/auditai_honorarios_tfidf.joblib
 
 El resultado reporta accuracy, macro_f1, weighted_f1, matriz de confusion y reporte por clase para porcentajes 50 y 100.
+
+## Modelo de tiempo de anestesia por codigo
+
+El tiempo de anestesia tambien se predice despues de generar los codigos. La respuesta incluye tiempos_anestesia_codigo con un valor por codigo y conserva tiempo_anestesia como resumen legacy usando el mayor tiempo sugerido.
+
+Primer baseline recomendado, mayoria historica por codigo:
+
+    cd ~/projects/auditorai
+    python scripts/train_anestesia.py --engine code_majority --final-fit-all --output models/auditai_anestesia.joblib
+
+Prueba alternativa para comparar si el texto aporta informacion adicional:
+
+    cd ~/projects/auditorai
+    python scripts/train_anestesia.py --engine tfidf_logreg --class-weight balanced --final-fit-all --output models/auditai_anestesia_tfidf.joblib
+
+El resultado reporta accuracy, macro_f1, weighted_f1, MAE en horas, matriz de confusion y reporte por clase para tiempos 1,2,3,4,5,6,7,8 y 24.

@@ -3,6 +3,7 @@ import re
 import unicodedata
 from collections import Counter
 from typing import Dict, Iterable, List, Tuple
+from .anestesia_model import aplicar_tiempos_anestesia
 from .config import settings
 from .db import fetch_all
 from .honorarios_model import aplicar_honorarios
@@ -143,7 +144,8 @@ def predecir(req: PrediccionRequest) -> Tuple[dict, float]:
     if MODEL_PATH.exists():
         prediccion, score = predecir_con_modelo(req)
         prediccion, score = anexar_soporte_plantillas(texto_request(req), prediccion, score)
-        return aplicar_honorarios(req, prediccion), score
+        prediccion = aplicar_honorarios(req, prediccion)
+        return aplicar_tiempos_anestesia(req, prediccion), score
 
     entrada = tokens(texto_request(req))
     grupos = buscar_grupos_historicos(req)
