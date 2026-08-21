@@ -1,4 +1,5 @@
 import argparse
+import os
 import json
 import re
 import sys
@@ -6,9 +7,13 @@ from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+import pymysql
+from pymysql.cursors import DictCursor
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from app.config import settings
 from app.db import db_connection, fetch_all
 
 
