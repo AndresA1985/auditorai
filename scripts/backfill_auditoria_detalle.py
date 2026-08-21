@@ -102,7 +102,7 @@ def cargar_destino(args) -> list[dict]:
     return [row for row in rows if row["codigo_norm"]]
 
 
-def cargar_tiempos_archivo_plano(rows: list[dict]) -> dict[tuple[str, str, str], str]:
+def cargar_tiempos_archivo_plano(rows: list[dict]) -> dict[tuple[str, str, str, str], str]:
     agenda_values = sorted({str(row["id_agenda"]) for row in rows if row.get("id_agenda") is not None})
     if not agenda_values:
         return {}
@@ -127,7 +127,7 @@ def cargar_tiempos_archivo_plano(rows: list[dict]) -> dict[tuple[str, str, str],
               AND h.id_agenda IN ({placeholders(chunk)})
               AND (
                     apd.tipo = 'TA'
-                    OR apd.descripcion LIKE '%TIEMPO DE ANESTESIA%'
+                    OR apd.descripcion LIKE '%%TIEMPO DE ANESTESIA%%'
               )
               AND apd.codigo IS NOT NULL
               AND apd.codigo <> ''
@@ -143,7 +143,7 @@ def cargar_tiempos_archivo_plano(rows: list[dict]) -> dict[tuple[str, str, str],
     return result
 
 
-def armar_actualizaciones(rows: list[dict], tiempos: dict[tuple[str, str, str], str], args) -> list[dict]:
+def armar_actualizaciones(rows: list[dict], tiempos: dict[tuple[str, str, str, str], str], args) -> list[dict]:
     updates = []
     stats = defaultdict(int)
     for row in rows:
