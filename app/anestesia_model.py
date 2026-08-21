@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any
 
 import joblib
+import torch
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from .schemas import PrediccionRequest
 
@@ -52,11 +54,47 @@ def cargar_modelo_anestesia(path: str = str(DEFAULT_ANESTESIA_PATH)):
     return joblib.load(model_path)
 
 
+@lru_cache(maxsize=2)
+def cargar_transformer_runtime(model_dir: str):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    model = AutoModelForSequenceClassification.from_pretrained(model_dir).to(device)
+    model.eval()
+    return tokenizer, model, device
+
+
+def predecir_tiempo_transformer(artifact: dict, texto: str, codigo: str) -> str:
+    model_dir = artifact.get('model_dir')
+    classes = [str(value) for value in artifact.get('classes') or []]
+    if not model_dir or not classes:
+        return DEFAULT_TIME
+
+    tokenizer, model, device = cargar_transformer_runtime(model_dir)
+    max_length = int(artifact.get('max_length') or 384)
+    encoded = tokenizer(
+        texto_codigo(texto, codigo),
+        truncation=True,
+        padding=True,
+        max_length=max_length,
+        return_tensors='pt',
+    )
+    encoded = {key: value.to(device) for key, value in encoded.items()}
+    with torch.no_grad():
+        logits = model(**encoded).logits
+    label_idx = int(torch.argmax(logits, dim=1).item())
+    if label_idx < 0 or label_idx >= len(classes):
+        return DEFAULT_TIME
+    return normalizar_tiempo(classes[label_idx])
+
+
 def predecir_tiempo(artifact: dict, texto: str, codigo: str) -> str:
     code = normalizar_codigo(codigo)
     engine = artifact.get('engine', 'code_majority')
     default = str(artifact.get('global_default') or DEFAULT_TIME)
     by_code = artifact.get('by_code') or {}
+
+    if artifact.get('model') == 'transformer_anestesia':
+        return predecir_tiempo_transformer(artifact, texto, code)
 
     if engine == 'tfidf_logreg' and artifact.get('vectorizer') is not None:
         vector = artifact['vectorizer'].transform([texto_codigo(texto, code)])
