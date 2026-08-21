@@ -4,3 +4,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 require
+# Model artifacts
+models/*.joblib
+models/*_hf/
+models/*_runs/
