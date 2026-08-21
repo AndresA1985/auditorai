@@ -110,9 +110,9 @@ def entrenar_tfidf(rows: list[dict], train_idx: list[int], max_features: int, cl
     x_train = vectorizer.fit_transform(texts)
     classifier = LogisticRegression(
         C=1.0,
-        solver='liblinear',
+        solver='saga',
         class_weight=class_weight,
-        max_iter=1000,
+        max_iter=2000,
     )
     classifier.fit(x_train, y_train)
     majority_artifact = entrenar_mayoria(rows, train_idx)
