@@ -17,6 +17,36 @@ from app.config import settings
 from app.db import db_connection, fetch_all
 
 
+def required_source_env(name: str, *, allow_empty: bool = False) -> str:
+    value = os.getenv(name)
+    if value is None or (value == "" and not allow_empty):
+        raise RuntimeError("Falta configurar {0} en el archivo .env".format(name))
+    return value
+
+
+def source_db_config() -> dict:
+    return {
+        "host": required_source_env("SOURCE_DB_HOST"),
+        "port": int(required_source_env("SOURCE_DB_PORT")),
+        "user": required_source_env("SOURCE_DB_USERNAME"),
+        "password": required_source_env("SOURCE_DB_PASSWORD", allow_empty=True),
+        "database": required_source_env("SOURCE_DB_DATABASE"),
+        "charset": "utf8mb4",
+        "cursorclass": DictCursor,
+        "autocommit": True,
+    }
+
+
+def fetch_all_source(sql: str, params=None):
+    conn = pymysql.connect(**source_db_config())
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, params or {})
+            return cursor.fetchall()
+    finally:
+        conn.close()
+
+
 def normalizar_codigo(value) -> str:
     if value is None:
         return ""
@@ -138,7 +168,7 @@ def cargar_tiempos_archivo_plano(rows: list[dict]) -> dict[tuple[str, str, str, 
               AND apd.codigo <> ''
               AND apd.codigo <> 0
         """
-        for row in fetch_all(sql, chunk):
+        for row in fetch_all_source(sql, chunk):
             code = normalizar_codigo(row.get("codigo"))
             time_value = normalizar_numero(row.get("cantidad"))
             if not code or not time_value:
