@@ -33,6 +33,7 @@ def cargar_dataset(limit: int | None, allowed_percentages: set[str]) -> list[dic
             MAX(id_empresa) AS id_empresa,
             MAX(id_seguro) AS id_seguro,
             codigo,
+            MAX(honorario_auditor) AS honorario_auditor,
             MAX(porcentaje) AS porcentaje,
             MAX(procedimiento_auditor) AS procedimiento_auditor,
             MAX(nombre_procedimiento) AS nombre_procedimiento,
@@ -42,8 +43,10 @@ def cargar_dataset(limit: int | None, allowed_percentages: set[str]) -> list[dic
         WHERE estado = 1
           AND codigo IS NOT NULL
           AND codigo <> ''
-          AND porcentaje IS NOT NULL
-          AND porcentaje <> ''
+          AND (
+                (honorario_auditor IS NOT NULL AND honorario_auditor <> '')
+                OR (porcentaje IS NOT NULL AND porcentaje <> '')
+              )
         GROUP BY id_agenda, codigo
         ORDER BY MAX(fecha) ASC, id_agenda ASC, codigo ASC
     '''
@@ -52,7 +55,7 @@ def cargar_dataset(limit: int | None, allowed_percentages: set[str]) -> list[dic
     rows = []
     for row in fetch_all(sql):
         code = normalizar_codigo(row.get('codigo'))
-        percentage = normalizar_porcentaje(row.get('porcentaje'))
+        percentage = normalizar_porcentaje(row.get('honorario_auditor') or row.get('porcentaje'))
         if not code or percentage not in allowed_percentages:
             continue
         row['codigo_norm'] = code

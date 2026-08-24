@@ -11,7 +11,8 @@ from .config import settings
 from .schemas import PrediccionRequest
 
 MODEL_PATH = settings.model_path
-DEFAULT_RANKING_LIMIT = 15
+DEFAULT_RANKING_LIMIT = 30
+SCORE_DECIMALS = 6
 EXCLUDED_PREDICTION_CODES = {"93000", "99203", "99204", "99252"}
 
 
@@ -135,7 +136,7 @@ def predecir_multilabel(artefacto: dict, texto: str) -> Tuple[dict, float]:
     selected = binarizar_con_threshold(probabilities, threshold, min_labels, allowed_mask)
     codigos = [codigo for codigo, keep in zip(normalized_classes, selected) if keep]
     score_by_code = {
-        codigo: round(float(score_item), 4)
+        codigo: round(float(score_item), SCORE_DECIMALS)
         for codigo, score_item in zip(normalized_classes, probabilities)
         if codigo and codigo not in EXCLUDED_PREDICTION_CODES
     }
@@ -151,12 +152,12 @@ def predecir_multilabel(artefacto: dict, texto: str) -> Tuple[dict, float]:
         if codigo and codigo not in EXCLUDED_PREDICTION_CODES
     ]
     codigo_scores = {
-        codigo: round(float(score_item), 4)
+        codigo: round(float(score_item), SCORE_DECIMALS)
         for codigo, score_item in sorted_items
         if codigo in codigos
     }
     codigo_ranking = [
-        {"codigo": codigo, "score": round(float(score_item), 4), "selected": codigo in codigos}
+        {"codigo": codigo, "score": round(float(score_item), SCORE_DECIMALS), "selected": codigo in codigos}
         for codigo, score_item in sorted_items[:DEFAULT_RANKING_LIMIT]
     ]
     score = max(codigo_scores.values()) if codigo_scores else 0.0
@@ -196,14 +197,14 @@ def predecir_transformer_multilabel(artefacto: dict, texto: str) -> Tuple[dict, 
     selected = binarizar_con_threshold(probabilities, threshold, min_labels, allowed_mask)
     codigos = [codigo for codigo, keep in zip(normalized_classes, selected) if keep]
     score_by_code = {
-        codigo: round(float(score), 4)
+        codigo: round(float(score), SCORE_DECIMALS)
         for codigo, score in zip(normalized_classes, probabilities)
         if codigo and codigo not in EXCLUDED_PREDICTION_CODES
     }
     codigos.sort(key=lambda codigo: score_by_code[codigo], reverse=True)
     codigo_scores = {codigo: score_by_code[codigo] for codigo in codigos}
     codigo_ranking = [
-        {"codigo": codigo, "score": round(float(score_item), 4), "selected": bool(keep)}
+        {"codigo": codigo, "score": round(float(score_item), SCORE_DECIMALS), "selected": bool(keep)}
         for codigo, score_item, keep in sorted(
             zip(normalized_classes, probabilities, selected),
             key=lambda item: float(item[1]),
