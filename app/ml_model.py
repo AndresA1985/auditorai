@@ -12,6 +12,18 @@ from .schemas import PrediccionRequest
 
 MODEL_PATH = settings.model_path
 DEFAULT_RANKING_LIMIT = 15
+EXCLUDED_PREDICTION_CODES = {"93000", "99203", "99204", "99252"}
+
+
+def normalizar_codigo(valor: Any) -> str:
+    if valor is None:
+        return ""
+    return re.sub(r"\D+", "", str(valor))
+
+
+def es_codigo_permitido(codigo: Any) -> bool:
+    codigo_normalizado = normalizar_codigo(codigo)
+    return bool(codigo_normalizado and codigo_normalizado not in EXCLUDED_PREDICTION_CODES)
 
 
 def separar_codigos(valor: str) -> List[str]:
@@ -19,8 +31,8 @@ def separar_codigos(valor: str) -> List[str]:
         return []
     codigos = []
     for parte in re.split(r"[,+]", str(valor)):
-        codigo = parte.strip()
-        if codigo and codigo not in codigos:
+        codigo = normalizar_codigo(parte)
+        if es_codigo_permitido(codigo) and codigo not in codigos:
             codigos.append(codigo)
     return codigos
 
@@ -93,11 +105,19 @@ def vectorizar_texto(artefacto: dict, texto: str):
     return artefacto["vectorizer"].transform([texto])
 
 
-def binarizar_con_threshold(probabilities: np.ndarray, threshold: float, min_labels: int) -> np.ndarray:
-    pred = probabilities >= threshold
-    if min_labels > 0 and pred.sum() < min_labels:
-        top_n = min(min_labels, probabilities.shape[0])
-        top_idx = np.argpartition(probabilities, -top_n)[-top_n:]
+def binarizar_con_threshold(
+    probabilities: np.ndarray,
+    threshold: float,
+    min_labels: int,
+    allowed_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    if allowed_mask is None:
+        allowed_mask = np.ones(probabilities.shape[0], dtype=bool)
+    pred = (probabilities >= threshold) & allowed_mask
+    if min_labels > 0 and pred.sum() < min_labels and allowed_mask.any():
+        top_n = min(min_labels, int(allowed_mask.sum()))
+        masked_probabilities = np.where(allowed_mask, probabilities, -np.inf)
+        top_idx = np.argpartition(masked_probabilities, -top_n)[-top_n:]
         pred[top_idx] = True
     return pred
 
@@ -109,26 +129,35 @@ def predecir_multilabel(artefacto: dict, texto: str) -> Tuple[dict, float]:
     min_labels = int(artefacto.get("min_labels", 1))
     label_binarizer = artefacto["label_binarizer"]
 
-    selected = binarizar_con_threshold(probabilities, threshold, min_labels)
-    codigos = [str(codigo) for codigo, keep in zip(label_binarizer.classes_, selected) if keep]
-    codigos.sort(key=lambda codigo: float(probabilities[list(label_binarizer.classes_).index(codigo)]), reverse=True)
+    classes = list(label_binarizer.classes_)
+    normalized_classes = [normalizar_codigo(codigo) for codigo in classes]
+    allowed_mask = np.array([es_codigo_permitido(codigo) for codigo in classes], dtype=bool)
+    selected = binarizar_con_threshold(probabilities, threshold, min_labels, allowed_mask)
+    codigos = [codigo for codigo, keep in zip(normalized_classes, selected) if keep]
+    score_by_code = {
+        codigo: round(float(score_item), 4)
+        for codigo, score_item in zip(normalized_classes, probabilities)
+        if codigo and codigo not in EXCLUDED_PREDICTION_CODES
+    }
+    codigos.sort(key=lambda codigo: score_by_code[codigo], reverse=True)
 
-    codigo_scores = {
-        str(codigo): round(float(score), 4)
-        for codigo, score in sorted(
-            zip(label_binarizer.classes_, probabilities),
+    sorted_items = [
+        (codigo, score_item)
+        for codigo, score_item in sorted(
+            zip(normalized_classes, probabilities),
             key=lambda item: float(item[1]),
             reverse=True,
         )
-        if str(codigo) in codigos
+        if codigo and codigo not in EXCLUDED_PREDICTION_CODES
+    ]
+    codigo_scores = {
+        codigo: round(float(score_item), 4)
+        for codigo, score_item in sorted_items
+        if codigo in codigos
     }
     codigo_ranking = [
-        {"codigo": str(codigo), "score": round(float(score_item), 4), "selected": str(codigo) in codigos}
-        for codigo, score_item in sorted(
-            zip(label_binarizer.classes_, probabilities),
-            key=lambda item: float(item[1]),
-            reverse=True,
-        )[:DEFAULT_RANKING_LIMIT]
+        {"codigo": codigo, "score": round(float(score_item), 4), "selected": codigo in codigos}
+        for codigo, score_item in sorted_items[:DEFAULT_RANKING_LIMIT]
     ]
     score = max(codigo_scores.values()) if codigo_scores else 0.0
 
@@ -162,15 +191,26 @@ def predecir_transformer_multilabel(artefacto: dict, texto: str) -> Tuple[dict, 
     encoded = {key: value.to(device) for key, value in encoded.items()}
     with torch.no_grad():
         probabilities = torch.sigmoid(model(**encoded).logits[0]).detach().cpu().numpy()
-    selected = binarizar_con_threshold(probabilities, threshold, min_labels)
-    codigos = [str(codigo) for codigo, keep in zip(classes, selected) if keep]
-    score_by_code = {str(codigo): round(float(score), 4) for codigo, score in zip(classes, probabilities)}
+    normalized_classes = [normalizar_codigo(codigo) for codigo in classes]
+    allowed_mask = np.array([es_codigo_permitido(codigo) for codigo in classes], dtype=bool)
+    selected = binarizar_con_threshold(probabilities, threshold, min_labels, allowed_mask)
+    codigos = [codigo for codigo, keep in zip(normalized_classes, selected) if keep]
+    score_by_code = {
+        codigo: round(float(score), 4)
+        for codigo, score in zip(normalized_classes, probabilities)
+        if codigo and codigo not in EXCLUDED_PREDICTION_CODES
+    }
     codigos.sort(key=lambda codigo: score_by_code[codigo], reverse=True)
     codigo_scores = {codigo: score_by_code[codigo] for codigo in codigos}
     codigo_ranking = [
-        {"codigo": str(codigo), "score": round(float(score_item), 4), "selected": bool(keep)}
-        for codigo, score_item, keep in sorted(zip(classes, probabilities, selected), key=lambda item: float(item[1]), reverse=True)[:DEFAULT_RANKING_LIMIT]
-    ]
+        {"codigo": codigo, "score": round(float(score_item), 4), "selected": bool(keep)}
+        for codigo, score_item, keep in sorted(
+            zip(normalized_classes, probabilities, selected),
+            key=lambda item: float(item[1]),
+            reverse=True,
+        )
+        if codigo and codigo not in EXCLUDED_PREDICTION_CODES
+    ][:DEFAULT_RANKING_LIMIT]
     score = max(codigo_scores.values()) if codigo_scores else 0.0
     return {
         "codigos": codigos,
