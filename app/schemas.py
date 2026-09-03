@@ -1,4 +1,6 @@
+from datetime import date
 from typing import Any, Dict, List, Optional, Union
+
 from pydantic import BaseModel, Field
 
 
@@ -21,14 +23,31 @@ class PrediccionRequest(BaseModel):
 
 class CodigoScore(BaseModel):
     codigo: str
-    score: float
+    score: float = Field(description=(
+        "Puntaje usado exclusivamente para ordenar codigos sugeridos. "
+        "No es F1, confianza ni una probabilidad calibrada."
+    ))
     selected: bool = False
+    descripcion_codigo: str = ""
+    texto_soporte: Optional[str] = None
+    justificacion: str = Field(
+        default="No se encontro evidencia textual suficiente para justificar este codigo."
+    )
+
+
+class MetricasModelo(BaseModel):
+    f1_macro: float = Field(ge=0.0, le=1.0)
+    f1_weighted: float = Field(ge=0.0, le=1.0)
+    version_modelo: str
+    conjunto_evaluacion: str
+    fecha_evaluacion: date
+    cantidad_muestras: int = Field(ge=1)
 
 
 class PlantillaScore(BaseModel):
     cod_plantilla: str
-    descripcion: str = Field(default='')
-    desc_comp: str = Field(default='')
+    descripcion: str = Field(default="")
+    desc_comp: str = Field(default="")
     codigos: List[str] = Field(default_factory=list)
     score: float
 
@@ -37,6 +56,7 @@ class PrediccionPayload(BaseModel):
     codigos: List[str]
     codigo_scores: Dict[str, float] = Field(default_factory=dict)
     codigo_ranking: List[CodigoScore] = Field(default_factory=list)
+    metricas_modelo: Optional[MetricasModelo] = None
     plantilla_ranking: List[PlantillaScore] = Field(default_factory=list)
     honorarios_codigo: Dict[str, str]
     honorario: str

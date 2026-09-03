@@ -1,269 +1,172 @@
 import re
-from functools import lru_cache
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
-import joblib
 import numpy as np
-from sklearn.neighbors import NearestNeighbors
 
-from .config import settings
+from . import ml_model_base as _base
+from .ml_model_base import *  # noqa: F401,F403 - API interna compatible
 from .schemas import PrediccionRequest
 
-MODEL_PATH = settings.model_path
-DEFAULT_RANKING_LIMIT = 30
-SCORE_DECIMALS = 6
-EXCLUDED_PREDICTION_CODES = {"93000", "99203", "99204", "99252"}
+MAX_SUPPORT_LENGTH = 500
 
 
-def normalizar_codigo(valor: Any) -> str:
-    if valor is None:
-        return ""
-    return re.sub(r"\D+", "", str(valor))
+def fragmentos_clinicos(texto: str) -> List[str]:
+    """Devuelve substrings literales del hallazgo; nunca genera evidencia."""
+    fragmentos = []
+    for match in re.finditer(r"[^.!?\r\n]+(?:[.!?]+|$)", texto or ""):
+        fragmento = match.group(0).strip()
+        if len(fragmento) >= 12:
+            fragmentos.append(fragmento[:MAX_SUPPORT_LENGTH])
+    return fragmentos
 
 
-def es_codigo_permitido(codigo: Any) -> bool:
-    codigo_normalizado = normalizar_codigo(codigo)
-    return bool(codigo_normalizado and codigo_normalizado not in EXCLUDED_PREDICTION_CODES)
+def _soportes_tfidf(artefacto: dict, fragmentos: List[str], codigos: List[str]) -> dict[str, str]:
+    probabilidades = artefacto["classifier"].predict_proba(
+        artefacto["vectorizer"].transform(fragmentos)
+    )
+    clases = [_base.normalizar_codigo(codigo) for codigo in artefacto["label_binarizer"].classes_]
+    indices = {codigo: indice for indice, codigo in enumerate(clases)}
+    umbral = float(artefacto.get("evidence_threshold", artefacto.get("threshold", 0.5)))
+    soportes = {}
+    for codigo in codigos:
+        indice = indices.get(codigo)
+        if indice is None:
+            continue
+        indice_fragmento = int(np.argmax(probabilidades[:, indice]))
+        if float(probabilidades[indice_fragmento, indice]) >= umbral:
+            soportes[codigo] = fragmentos[indice_fragmento]
+    return soportes
 
 
-def separar_codigos(valor: str) -> List[str]:
-    if not valor:
-        return []
-    codigos = []
-    for parte in re.split(r"[,+]", str(valor)):
-        codigo = normalizar_codigo(parte)
-        if es_codigo_permitido(codigo) and codigo not in codigos:
-            codigos.append(codigo)
-    return codigos
-
-
-def texto_request(req: PrediccionRequest) -> str:
-    return " ".join([
-        req.procedimiento_sistema or "",
-        req.hallazgos_conclusion or "",
-        req.descripcion_estudio_013 or "",
-    ]).strip()
-
-
-@lru_cache(maxsize=2)
-def cargar_sentence_transformer(model_name: str, device: str):
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError as exc:
-        raise RuntimeError(
-            "Falta instalar sentence-transformers. Ejecuta: pip install -r requirements.txt"
-        ) from exc
-
-    kwargs: dict[str, Any] = {}
-    if device and device.lower() != "auto":
-        kwargs["device"] = device
-    return SentenceTransformer(model_name, **kwargs)
-
-
-@lru_cache(maxsize=2)
-def cargar_transformer_multilabel(model_dir: str, device: str):
-    try:
-        import torch
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer
-    except ImportError as exc:
-        raise RuntimeError(
-            "Falta instalar torch/transformers. Ejecuta: pip install -r requirements.txt"
-        ) from exc
-
-    resolved_device = device
-    if not resolved_device or resolved_device.lower() == "auto":
-        resolved_device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
-    model.to(resolved_device)
-    model.eval()
-    return tokenizer, model, resolved_device, torch
-
-
-def cargar_modelo(path: Path = MODEL_PATH):
-    if not path.exists():
-        return None
-    artefacto = joblib.load(path)
-    if isinstance(artefacto, dict):
-        artefacto["_artifact_path"] = str(path)
-    return artefacto
-
-
-def vectorizar_texto(artefacto: dict, texto: str):
-    engine = artefacto.get("engine", "tfidf")
-    if engine == "embeddings":
-        model_name = artefacto.get("embedding_model_name") or settings.embedding_model_name
-        model = cargar_sentence_transformer(model_name, settings.embedding_device)
-        return model.encode(
-            [texto],
-            batch_size=1,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-        )
-    return artefacto["vectorizer"].transform([texto])
-
-
-def binarizar_con_threshold(
-    probabilities: np.ndarray,
-    threshold: float,
-    min_labels: int,
-    allowed_mask: np.ndarray | None = None,
-) -> np.ndarray:
-    if allowed_mask is None:
-        allowed_mask = np.ones(probabilities.shape[0], dtype=bool)
-    pred = (probabilities >= threshold) & allowed_mask
-    if min_labels > 0 and pred.sum() < min_labels and allowed_mask.any():
-        top_n = min(min_labels, int(allowed_mask.sum()))
-        masked_probabilities = np.where(allowed_mask, probabilities, -np.inf)
-        top_idx = np.argpartition(masked_probabilities, -top_n)[-top_n:]
-        pred[top_idx] = True
-    return pred
-
-
-def predecir_multilabel(artefacto: dict, texto: str) -> Tuple[dict, float]:
-    vector = artefacto["vectorizer"].transform([texto])
-    probabilities = artefacto["classifier"].predict_proba(vector)[0]
-    threshold = float(artefacto.get("threshold", 0.5))
-    min_labels = int(artefacto.get("min_labels", 1))
-    label_binarizer = artefacto["label_binarizer"]
-
-    classes = list(label_binarizer.classes_)
-    normalized_classes = [normalizar_codigo(codigo) for codigo in classes]
-    allowed_mask = np.array([es_codigo_permitido(codigo) for codigo in classes], dtype=bool)
-    selected = binarizar_con_threshold(probabilities, threshold, min_labels, allowed_mask)
-    codigos = [codigo for codigo, keep in zip(normalized_classes, selected) if keep]
-    score_by_code = {
-        codigo: round(float(score_item), SCORE_DECIMALS)
-        for codigo, score_item in zip(normalized_classes, probabilities)
-        if codigo and codigo not in EXCLUDED_PREDICTION_CODES
-    }
-    codigos.sort(key=lambda codigo: score_by_code[codigo], reverse=True)
-
-    sorted_items = [
-        (codigo, score_item)
-        for codigo, score_item in sorted(
-            zip(normalized_classes, probabilities),
-            key=lambda item: float(item[1]),
-            reverse=True,
-        )
-        if codigo and codigo not in EXCLUDED_PREDICTION_CODES
-    ]
-    codigo_scores = {
-        codigo: round(float(score_item), SCORE_DECIMALS)
-        for codigo, score_item in sorted_items
-        if codigo in codigos
-    }
-    codigo_ranking = [
-        {"codigo": codigo, "score": round(float(score_item), SCORE_DECIMALS), "selected": codigo in codigos}
-        for codigo, score_item in sorted_items[:DEFAULT_RANKING_LIMIT]
-    ]
-    score = max(codigo_scores.values()) if codigo_scores else 0.0
-
-    return {
-        "codigos": codigos,
-        "codigo_scores": codigo_scores,
-        "codigo_ranking": codigo_ranking,
-        "honorarios_codigo": {},
-        "honorario": "",
-        "tiempo_anestesia": "",
-        "nombre_procedimiento": "",
-        "observacion_auditor": "Codigos propuestos por clasificador multi-label; validar antes de guardar.",
-    }, score
-
-def resolver_model_dir(artefacto: dict) -> Path:
-    model_dir = Path(str(artefacto["model_dir"]))
-    if model_dir.is_absolute():
-        return model_dir
-    artifact_path = Path(str(artefacto.get("_artifact_path") or MODEL_PATH))
-    return artifact_path.parent / model_dir
-
-
-def predecir_transformer_multilabel(artefacto: dict, texto: str) -> Tuple[dict, float]:
-    model_dir = resolver_model_dir(artefacto)
-    tokenizer, model, device, torch = cargar_transformer_multilabel(str(model_dir), settings.embedding_device)
-    max_length = int(artefacto.get("max_length", 512))
-    threshold = float(artefacto.get("threshold", 0.5))
-    min_labels = int(artefacto.get("min_labels", 1))
-    classes = artefacto["classes"]
-    encoded = tokenizer(texto, truncation=True, max_length=max_length, padding=False, return_tensors="pt")
+def _soportes_transformer(artefacto: dict, fragmentos: List[str], codigos: List[str]) -> dict[str, str]:
+    model_dir = _base.resolver_model_dir(artefacto)
+    tokenizer, model, device, torch = _base.cargar_transformer_multilabel(
+        str(model_dir), _base.settings.embedding_device
+    )
+    encoded = tokenizer(
+        fragmentos,
+        truncation=True,
+        max_length=int(artefacto.get("max_length", 512)),
+        padding=True,
+        return_tensors="pt",
+    )
     encoded = {key: value.to(device) for key, value in encoded.items()}
     with torch.no_grad():
-        probabilities = torch.sigmoid(model(**encoded).logits[0]).detach().cpu().numpy()
-    normalized_classes = [normalizar_codigo(codigo) for codigo in classes]
-    allowed_mask = np.array([es_codigo_permitido(codigo) for codigo in classes], dtype=bool)
-    selected = binarizar_con_threshold(probabilities, threshold, min_labels, allowed_mask)
-    codigos = [codigo for codigo, keep in zip(normalized_classes, selected) if keep]
-    score_by_code = {
-        codigo: round(float(score), SCORE_DECIMALS)
-        for codigo, score in zip(normalized_classes, probabilities)
-        if codigo and codigo not in EXCLUDED_PREDICTION_CODES
+        probabilidades = torch.sigmoid(model(**encoded).logits).detach().cpu().numpy()
+    clases = [_base.normalizar_codigo(codigo) for codigo in artefacto["classes"]]
+    indices = {codigo: indice for indice, codigo in enumerate(clases)}
+    umbral = float(artefacto.get("evidence_threshold", artefacto.get("threshold", 0.5)))
+    soportes = {}
+    for codigo in codigos:
+        indice = indices.get(codigo)
+        if indice is None:
+            continue
+        indice_fragmento = int(np.argmax(probabilidades[:, indice]))
+        if float(probabilidades[indice_fragmento, indice]) >= umbral:
+            soportes[codigo] = fragmentos[indice_fragmento]
+    return soportes
+
+
+def soportes_por_codigo(artefacto: dict, ranking: List[dict], hallazgo: str) -> dict[str, str]:
+    fragmentos = fragmentos_clinicos(hallazgo)
+    codigos = [str(item.get("codigo") or "") for item in ranking]
+    if not fragmentos or not codigos:
+        return {}
+    try:
+        if artefacto.get("model") == "tfidf_logistic_regression_multilabel":
+            return _soportes_tfidf(artefacto, fragmentos, codigos)
+        if artefacto.get("model") == "transformer_multilabel":
+            return _soportes_transformer(artefacto, fragmentos, codigos)
+    except (IndexError, KeyError, ValueError, RuntimeError, TypeError):
+        return {}
+    return {}
+
+
+def anexar_justificaciones_codigo(
+    codigo_ranking: List[dict],
+    hallazgo: str,
+    soportes: dict[str, str] | None = None,
+) -> List[dict]:
+    """Añade explicación por código manteniendo score como ranking no calibrado."""
+    soportes = soportes or {}
+    fragmentos_validos = fragmentos_clinicos(hallazgo)
+    resultado = []
+    for item_original in codigo_ranking:
+        item = dict(item_original)
+        codigo = str(item.get("codigo") or "")
+        score = float(item.get("score") or 0.0)
+        texto_soporte = soportes.get(codigo)
+        if texto_soporte not in fragmentos_validos:
+            texto_soporte = None
+        item.setdefault("descripcion_codigo", "")
+        item["texto_soporte"] = texto_soporte
+        if texto_soporte:
+            item["justificacion"] = (
+                f"Se sugirio el codigo {codigo} porque el modelo lo ubico en el ranking "
+                f"con un puntaje no calibrado de {score:.4f}. El fragmento del hallazgo "
+                f"que supero el umbral de evidencia para este codigo fue: "
+                f"\"{texto_soporte}\". Requiere validacion del auditor."
+            )
+        else:
+            item["justificacion"] = (
+                f"Se sugirio el codigo {codigo} por su posicion en el ranking del modelo "
+                f"con un puntaje no calibrado de {score:.4f}, pero no se encontro evidencia "
+                "textual especifica suficiente para justificarlo. Requiere validacion del auditor."
+            )
+        resultado.append(item)
+    return resultado
+
+
+def metricas_modelo_desde_artefacto(artefacto: dict) -> dict | None:
+    """Lee únicamente métricas holdout explícitas ligadas al artefacto activo."""
+    if artefacto.get("training_scope") != "train_split":
+        return None
+    evaluacion = artefacto.get("evaluation") or {}
+    metricas = evaluacion.get("final_test_metrics") or {}
+    if not evaluacion.get("evaluated"):
+        return None
+    if not all(campo in metricas for campo in ("f1_macro", "f1_weighted", "size", "dataset")):
+        return None
+    version = artefacto.get("model_version")
+    fecha = artefacto.get("evaluated_at")
+    if not version or not fecha:
+        return None
+    return {
+        "f1_macro": float(metricas["f1_macro"]),
+        "f1_weighted": float(metricas["f1_weighted"]),
+        "version_modelo": str(version),
+        "conjunto_evaluacion": str(metricas["dataset"]),
+        "fecha_evaluacion": str(fecha)[:10],
+        "cantidad_muestras": int(metricas["size"]),
     }
-    codigos.sort(key=lambda codigo: score_by_code[codigo], reverse=True)
-    codigo_scores = {codigo: score_by_code[codigo] for codigo in codigos}
-    codigo_ranking = [
-        {"codigo": codigo, "score": round(float(score_item), SCORE_DECIMALS), "selected": bool(keep)}
-        for codigo, score_item, keep in sorted(
-            zip(normalized_classes, probabilities, selected),
-            key=lambda item: float(item[1]),
-            reverse=True,
-        )
-        if codigo and codigo not in EXCLUDED_PREDICTION_CODES
-    ][:DEFAULT_RANKING_LIMIT]
-    score = max(codigo_scores.values()) if codigo_scores else 0.0
-    return {
-        "codigos": codigos,
-        "codigo_scores": codigo_scores,
-        "codigo_ranking": codigo_ranking,
-        "honorarios_codigo": {},
-        "honorario": "",
-        "tiempo_anestesia": "",
-        "nombre_procedimiento": "",
-        "observacion_auditor": "Codigos propuestos por Transformer fine-tuneado multi-label; validar antes de guardar.",
-    }, score
 
 
-def predecir_vecino(artefacto: dict, texto: str) -> Tuple[dict, float]:
-    neighbors: NearestNeighbors = artefacto["neighbors"]
-    labels = artefacto["labels"]
-    min_similarity = artefacto.get("min_similarity", settings.model_min_similarity)
-
-    vector = vectorizar_texto(artefacto, texto)
-    distances, indices = neighbors.kneighbors(vector, n_neighbors=1)
-    similarity = 1.0 - float(distances[0][0])
-    if similarity < min_similarity:
-        raise ValueError("No se encontro una referencia historica suficientemente parecida.")
-
-    label = labels[int(indices[0][0])]
-    codigos = separar_codigos(label["codigo_grupo_auditor"])
-
-    return {
-        "codigos": codigos,
-        "codigo_scores": {},
-        "codigo_ranking": [],
-        "honorarios_codigo": {},
-        "honorario": "",
-        "tiempo_anestesia": "",
-        "nombre_procedimiento": "",
-        "observacion_auditor": "Codigos propuestos por IA; validar antes de guardar.",
-    }, similarity
-
-
-def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tuple[dict, float]:
-    artefacto = cargar_modelo(path)
+def predecir_con_modelo(
+    req: PrediccionRequest,
+    path: Path = _base.MODEL_PATH,
+) -> Tuple[dict, float]:
+    artefacto = _base.cargar_modelo(path)
     if not artefacto:
         raise ValueError("Modelo ML no entrenado.")
-
-    texto = texto_request(req)
+    texto = _base.texto_request(req)
     if not texto:
         raise ValueError("No hay texto clinico suficiente para predecir.")
 
     model_type = artefacto.get("model")
     if model_type == "tfidf_logistic_regression_multilabel":
-        return predecir_multilabel(artefacto, texto)
-    if model_type == "transformer_multilabel":
-        return predecir_transformer_multilabel(artefacto, texto)
+        prediccion, score = _base.predecir_multilabel(artefacto, texto)
+    elif model_type == "transformer_multilabel":
+        prediccion, score = _base.predecir_transformer_multilabel(artefacto, texto)
+    else:
+        prediccion, score = _base.predecir_vecino(artefacto, texto)
 
-    return predecir_vecino(artefacto, texto)
+    ranking = prediccion.get("codigo_ranking") or []
+    hallazgo = req.hallazgos_conclusion or ""
+    prediccion["codigo_ranking"] = anexar_justificaciones_codigo(
+        ranking, hallazgo, soportes_por_codigo(artefacto, ranking, hallazgo)
+    )
+    metricas = metricas_modelo_desde_artefacto(artefacto)
+    if metricas is not None:
+        prediccion["metricas_modelo"] = metricas
+    return prediccion, score
