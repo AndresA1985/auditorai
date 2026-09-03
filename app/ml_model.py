@@ -83,6 +83,20 @@ def soportes_por_codigo(artefacto: dict, ranking: List[dict], hallazgo: str) -> 
     return {}
 
 
+def evidencia_no_disponible(nombre: str, fuente: str) -> dict:
+    return {
+        "disponible": False,
+        "texto_soporte": None,
+        "justificacion": (
+            f"No hay evidencia textual ni puntaje independiente disponible para {nombre}. "
+            "Requiere validacion del auditor."
+        ),
+        "score_ranking": None,
+        "porcentaje_ranking": None,
+        "fuente": fuente,
+    }
+
+
 def anexar_justificaciones_codigo(
     codigo_ranking: List[dict],
     hallazgo: str,
@@ -114,6 +128,25 @@ def anexar_justificaciones_codigo(
                 f"con un puntaje no calibrado de {score:.4f}, pero no se encontro evidencia "
                 "textual especifica suficiente para justificarlo. Requiere validacion del auditor."
             )
+        item["evidencias"] = {
+            "codigo": {
+                "disponible": bool(texto_soporte),
+                "texto_soporte": texto_soporte,
+                "justificacion": item["justificacion"],
+                "score_ranking": round(score, SCORE_DECIMALS),
+                "porcentaje_ranking": round(score * 100.0, 4),
+                "semantica_score": (
+                    "Puntaje del modelo de codigos usado para ordenar sugerencias; "
+                    "no es F1 ni probabilidad calibrada."
+                ),
+                "fuente": "modelo_codigos",
+                "valor_sugerido": codigo,
+            },
+            "honorario": evidencia_no_disponible("el honorario", "modelo_honorarios"),
+            "tiempo_anestesia": evidencia_no_disponible(
+                "el tiempo de anestesia", "modelo_tiempo_anestesia"
+            ),
+        }
         resultado.append(item)
     return resultado
 

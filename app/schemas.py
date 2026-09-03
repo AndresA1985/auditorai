@@ -21,6 +21,26 @@ class PrediccionRequest(BaseModel):
     descripcion_estudio_013: Optional[str] = None
 
 
+class EvidenciaRanking(BaseModel):
+    disponible: bool = False
+    texto_soporte: Optional[str] = None
+    justificacion: str
+    score_ranking: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    porcentaje_ranking: Optional[float] = Field(default=None, ge=0.0, le=100.0)
+    semantica_score: str = (
+        "Puntaje relativo de ranking; no es F1 ni probabilidad calibrada."
+    )
+    fuente: str
+    valor_sugerido: Optional[str] = None
+    unidad: Optional[str] = None
+
+
+class EvidenciasCodigo(BaseModel):
+    codigo: EvidenciaRanking
+    honorario: EvidenciaRanking
+    tiempo_anestesia: EvidenciaRanking
+
+
 class CodigoScore(BaseModel):
     codigo: str
     score: float = Field(description=(
@@ -33,6 +53,7 @@ class CodigoScore(BaseModel):
     justificacion: str = Field(
         default="No se encontro evidencia textual suficiente para justificar este codigo."
     )
+    evidencias: Optional[EvidenciasCodigo] = None
 
 
 class MetricasModelo(BaseModel):
