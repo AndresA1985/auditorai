@@ -1,0 +1,293 @@
+{
+  "mode": "apply",
+  "source": "archivo_plano_cabecera + archivo_plano_detalle",
+  "target": "ap_auditoria_doctor_detalle",
+  "rows_read": 2350,
+  "source_time_keys": 539,
+  "updates": 2350,
+  "stats": {
+    "cambia_honorario_auditor": 2350
+  },
+  "sample": [
+    {
+      "id": 52958,
+      "id_agenda": 181594,
+      "mes_plano": "72023",
+      "codigo": "45384",
+      "antes": {
+        "tiempo_anestesia": 2,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "45384(100),45380(50)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 52959,
+      "id_agenda": 181594,
+      "mes_plano": "72023",
+      "codigo": "45380",
+      "antes": {
+        "tiempo_anestesia": 2,
+        "porcentaje": "50.0000",
+        "honorario_auditor": "45384(100),45380(50)"
+      },
+      "despues": {
+        "honorario_auditor": "50"
+      }
+    },
+    {
+      "id": 53083,
+      "id_agenda": 184868,
+      "mes_plano": "72023",
+      "codigo": "43239",
+      "antes": {
+        "tiempo_anestesia": 4,
+        "porcentaje": "50.0000",
+        "honorario_auditor": "43239(50),43244(100)"
+      },
+      "despues": {
+        "honorario_auditor": "50"
+      }
+    },
+    {
+      "id": 53084,
+      "id_agenda": 184868,
+      "mes_plano": "72023",
+      "codigo": "43244",
+      "antes": {
+        "tiempo_anestesia": 4,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "43239(50),43244(100)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 52960,
+      "id_agenda": 186517,
+      "mes_plano": "72023",
+      "codigo": "45385",
+      "antes": {
+        "tiempo_anestesia": 2,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "45385(100),45380(50)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 52961,
+      "id_agenda": 186517,
+      "mes_plano": "72023",
+      "codigo": "45380",
+      "antes": {
+        "tiempo_anestesia": 2,
+        "porcentaje": "50.0000",
+        "honorario_auditor": "45385(100),45380(50)"
+      },
+      "despues": {
+        "honorario_auditor": "50"
+      }
+    },
+    {
+      "id": 53663,
+      "id_agenda": 187898,
+      "mes_plano": "72023",
+      "codigo": "45380",
+      "antes": {
+        "tiempo_anestesia": 4,
+        "porcentaje": "50.0000",
+        "honorario_auditor": "45380(50),45381(50),45384(100),99203(100),93000(100)"
+      },
+      "despues": {
+        "honorario_auditor": "50"
+      }
+    },
+    {
+      "id": 53664,
+      "id_agenda": 187898,
+      "mes_plano": "72023",
+      "codigo": "45381",
+      "antes": {
+        "tiempo_anestesia": 4,
+        "porcentaje": "50.0000",
+        "honorario_auditor": "45380(50),45381(50),45384(100),99203(100),93000(100)"
+      },
+      "despues": {
+        "honorario_auditor": "50"
+      }
+    },
+    {
+      "id": 53665,
+      "id_agenda": 187898,
+      "mes_plano": "72023",
+      "codigo": "45384",
+      "antes": {
+        "tiempo_anestesia": 4,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "45380(50),45381(50),45384(100),99203(100),93000(100)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 53666,
+      "id_agenda": 187898,
+      "mes_plano": "72023",
+      "codigo": "99203",
+      "antes": {
+        "tiempo_anestesia": 4,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "45380(50),45381(50),45384(100),99203(100),93000(100)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 53667,
+      "id_agenda": 187898,
+      "mes_plano": "72023",
+      "codigo": "93000",
+      "antes": {
+        "tiempo_anestesia": 4,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "45380(50),45381(50),45384(100),99203(100),93000(100)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 54591,
+      "id_agenda": 187921,
+      "mes_plano": "72023",
+      "codigo": "99203",
+      "antes": {
+        "tiempo_anestesia": null,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "99203(100),93000(100)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 54592,
+      "id_agenda": 187921,
+      "mes_plano": "72023",
+      "codigo": "93000",
+      "antes": {
+        "tiempo_anestesia": null,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "99203(100),93000(100)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 53623,
+      "id_agenda": 188439,
+      "mes_plano": "72023",
+      "codigo": "45385",
+      "antes": {
+        "tiempo_anestesia": 2,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "45385(100),45384(50),45380(50)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 53624,
+      "id_agenda": 188439,
+      "mes_plano": "72023",
+      "codigo": "45384",
+      "antes": {
+        "tiempo_anestesia": 2,
+        "porcentaje": "50.0000",
+        "honorario_auditor": "45385(100),45384(50),45380(50)"
+      },
+      "despues": {
+        "honorario_auditor": "50"
+      }
+    },
+    {
+      "id": 53625,
+      "id_agenda": 188439,
+      "mes_plano": "72023",
+      "codigo": "45380",
+      "antes": {
+        "tiempo_anestesia": 2,
+        "porcentaje": "50.0000",
+        "honorario_auditor": "45385(100),45384(50),45380(50)"
+      },
+      "despues": {
+        "honorario_auditor": "50"
+      }
+    },
+    {
+      "id": 53668,
+      "id_agenda": 188637,
+      "mes_plano": "72023",
+      "codigo": "99203",
+      "antes": {
+        "tiempo_anestesia": null,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "99203(100),93000(100)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 53669,
+      "id_agenda": 188637,
+      "mes_plano": "72023",
+      "codigo": "93000",
+      "antes": {
+        "tiempo_anestesia": null,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "99203(100),93000(100)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 53742,
+      "id_agenda": 188637,
+      "mes_plano": "72023",
+      "codigo": "44360",
+      "antes": {
+        "tiempo_anestesia": 2,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "44360(100)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    },
+    {
+      "id": 53820,
+      "id_agenda": 188637,
+      "mes_plano": "72023",
+      "codigo": "45384",
+      "antes": {
+        "tiempo_anestesia": 2,
+        "porcentaje": "100.0000",
+        "honorario_auditor": "45384(100),45380(50)"
+      },
+      "despues": {
+        "honorario_auditor": "100"
+      }
+    }
+  ]
+}

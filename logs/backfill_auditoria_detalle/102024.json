@@ -1,0 +1,12 @@
+{
+  "mode": "apply",
+  "source": "archivo_plano_cabecera + archivo_plano_detalle",
+  "target": "ap_auditoria_doctor_detalle",
+  "rows_read": 3759,
+  "source_time_keys": 851,
+  "updates": 0,
+  "stats": {
+    "sin_cambios": 3759
+  },
+  "sample": []
+}
