@@ -358,7 +358,7 @@ class TariffCandidateReviewContractTests(unittest.TestCase):
 
     def test_absent_document_metadata_preserves_normal_clinical_suggestion(self):
         source = request(evidencia_tarifario=evidence(
-            estado='sin_pdf', fuente='ninguna', codigos=[], documento_sha256=None
+            estado='sin_documento', fuente='ninguna', codigos=[], documento_sha256=None
         ))
         result = annotate_documentary_evidence(source, prediction(), candidate=True)
         self.assertFalse(result['requiere_revision'])

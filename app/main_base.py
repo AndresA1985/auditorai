@@ -30,10 +30,11 @@ def predecir_codigos(req: PrediccionRequest):
             "mensaje": "Propuesta generada. Revise antes de guardar.",
             "prediccion": prediccion,
         }
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Error generando prediccion: {0}".format(exc))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="No fue posible generar una predicción con esta entrada.") from None
+    except Exception:
+        # Exception text may include clinical input, database details or credentials.
+        raise HTTPException(status_code=500, detail="Error generando predicción.") from None
 
 @app.post("/predecir_auditoria", response_model=PrediccionResponse)
 def predecir_auditoria(req: PrediccionRequest):

@@ -61,7 +61,11 @@ def annotate_documentary_evidence(req, prediction: dict, *, candidate: bool = Fa
         raise ValueError("Invalid previous discrepancies")
     evidence = deepcopy(payload.get("evidencia_tarifario"))
     absent = evidence is None or (evidence.get("estado") in {"sin_documento", "sin_archivo", "sin_pdf"} and not evidence.get("codigos"))
-    if absent and not candidate and result.get("codigos"):
+    missing_expected_pdf = bool(evidence and (
+        evidence.get("estado") == "sin_pdf"
+        or "pdf_no_adjuntado" in evidence.get("advertencias", [])
+    ))
+    if absent and not missing_expected_pdf and not candidate and result.get("codigos"):
         return _return_with_intact_decisions(result, original_state)
     if evidence is None:
         evidence = {"estado": "sin_documento", "fuente": "ninguna", "codigos": [], "advertencias": ["sin_documento"]}
@@ -88,7 +92,7 @@ def annotate_documentary_evidence(req, prediction: dict, *, candidate: bool = Fa
             for item in result.get("codigo_ranking") or []
         ]
         # FIN CAMBIO AUDITORAI TARIFARIO: ausencia conserva el ranking serializable completo.
-        result.update({"evidencia_tarifario": evidence, "requiere_revision": bool(previous_review or previous_differences or abstained),
+        result.update({"evidencia_tarifario": evidence, "requiere_revision": bool(previous_review or previous_differences or abstained or missing_expected_pdf),
             "discrepancias": previous_differences, "citas_documentales": [], "justificaciones_tarifario": [],
             "comparacion_ranking_tarifario": ranking_comparison, "opciones_tarifario_documental": [],
             "abstencion": abstained,
@@ -115,14 +119,15 @@ def annotate_documentary_evidence(req, prediction: dict, *, candidate: bool = Fa
                 # El hash y la estructura preservan procedencia declarada, pero este servicio
                 # no vuelve a abrir el PDF y por eso no certifica la cita contra sus bytes.
                 "verificada": False, "alcance": "contexto_extraido_gen"})
-    # FUTURE CANDIDATE EXTENSION: GEN's current comparison does not carry this type.
+    # Check every declared clinical source; preserve the literal and its own field.
     for reference in references:
-        quote = _explicit_negation(str(payload.get("hallazgos_conclusion") or ""), reference)
-        if quote:
-            differences.append({"codigo": reference["codigo"], "tipo": "contradiccion_clinica",
-                "motivo": "Posible contradicción textual: una negación explícita coincide con el término documental. No es una conclusión clínica; requiere revisión del auditor."})
-            citations.append({"codigo": reference["codigo"], "fuente": "hallazgos_conclusion", "campo": "hallazgos_conclusion",
-                "texto": quote, "verificada": True, "alcance": "clinica_literal"})
+        for field in CLINICAL_SOURCES:
+            quote = _explicit_negation(str(payload.get(field) or ""), reference)
+            if quote:
+                differences.append({"codigo": reference["codigo"], "tipo": "contradiccion_clinica",
+                    "motivo": "Posible contradicción textual: una negación explícita coincide con el término documental. No es una conclusión clínica; requiere revisión del auditor."})
+                citations.append({"codigo": reference["codigo"], "fuente": field, "campo": field,
+                    "texto": quote, "verificada": True, "alcance": "clinica_literal"})
     # A model's quotation is accepted only as a literal in its own clinical source.
     for item in result.get("codigo_ranking") or []:
         if item.get("codigo") not in selected: continue

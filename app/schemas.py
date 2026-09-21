@@ -1,11 +1,13 @@
 from datetime import date
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 
 # INICIO CAMBIO AUDITORIA TARIFARIO: contrato documental aditivo y separado del ranking clínico.
 class CodigoTarifarioDocumental(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     codigo: str = Field(pattern=r"^[0-9]{5,6}$")
     descripcion: str = Field(default="", max_length=180)
     origen: Literal["texto", "ocr"]
@@ -51,6 +53,9 @@ MotivoAbstencionTarifario = Literal[
 
 
 class EvidenciaTarifario(BaseModel):
+    # Only bounded structured references cross this boundary, never PDF/OCR bodies.
+    model_config = ConfigDict(extra="forbid")
+
     estado: Literal[
         "extraido", "sin_codigos", "ilegible", "sin_documento", "sin_archivo", "sin_pdf"
     ]
