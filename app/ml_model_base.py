@@ -10,6 +10,40 @@ from sklearn.neighbors import NearestNeighbors
 from .config import settings
 from .schemas import PrediccionRequest
 
+# INICIO CAMBIO AUDITORIA TARIFARIO: representación versionada sólo para candidatos prospectivos.
+from .features import FEATURE_SCHEMA_VERSION, build_prediction_text
+
+
+def es_artefacto_tarifario(artefacto: dict | None) -> bool:
+    version = (artefacto or {}).get("feature_schema_version")
+    if version and version != FEATURE_SCHEMA_VERSION:
+        raise ValueError("Versión de features no soportada; no se aplica representación legada.")
+    return version == FEATURE_SCHEMA_VERSION
+
+
+def min_labels_del_artefacto(artefacto: dict) -> int:
+    if es_artefacto_tarifario(artefacto) and artefacto.get("allow_abstention") is True:
+        return 0
+    return int(artefacto.get("min_labels", 1))
+
+
+def prediccion_candidata_vacia() -> dict:
+    return {
+        "codigos": [],
+        "codigo_scores": {},
+        "codigo_ranking": [],
+        "honorarios_codigo": {},
+        "honorario": "",
+        "tiempo_anestesia": "",
+        "nombre_procedimiento": "",
+        "observacion_auditor": (
+            "El candidato se abstuvo por ausencia de features utilizables; "
+            "requiere revisión del auditor."
+        ),
+        "motivo_abstencion": "sin_features_utilizables",
+    }
+# FIN CAMBIO AUDITORIA TARIFARIO: representación versionada sólo para candidatos prospectivos.
+
 MODEL_PATH = settings.model_path
 DEFAULT_RANKING_LIMIT = 30
 SCORE_DECIMALS = 6
@@ -38,7 +72,13 @@ def separar_codigos(valor: str) -> List[str]:
     return codigos
 
 
-def texto_request(req: PrediccionRequest) -> str:
+def texto_request(req: PrediccionRequest, artefacto: dict | None = None) -> str:
+    # INICIO CAMBIO AUDITORIA TARIFARIO: el artefacto declara explícitamente su representación.
+    if es_artefacto_tarifario(artefacto):
+        return build_prediction_text(
+            req, mode=artefacto.get("feature_mode", "clinical_document")
+        )
+    # FIN CAMBIO AUDITORIA TARIFARIO: el artefacto declara explícitamente su representación.
     return " ".join([
         req.procedimiento_sistema or "",
         req.hallazgos_conclusion or "",
@@ -127,7 +167,9 @@ def predecir_multilabel(artefacto: dict, texto: str) -> Tuple[dict, float]:
     vector = artefacto["vectorizer"].transform([texto])
     probabilities = artefacto["classifier"].predict_proba(vector)[0]
     threshold = float(artefacto.get("threshold", 0.5))
-    min_labels = int(artefacto.get("min_labels", 1))
+    # INICIO CAMBIO AUDITORIA TARIFARIO: abstención opt-in; el mínimo legado queda intacto.
+    min_labels = min_labels_del_artefacto(artefacto)
+    # FIN CAMBIO AUDITORIA TARIFARIO: abstención opt-in; el mínimo legado queda intacto.
     label_binarizer = artefacto["label_binarizer"]
 
     classes = list(label_binarizer.classes_)
@@ -186,7 +228,9 @@ def predecir_transformer_multilabel(artefacto: dict, texto: str) -> Tuple[dict, 
     tokenizer, model, device, torch = cargar_transformer_multilabel(str(model_dir), settings.embedding_device)
     max_length = int(artefacto.get("max_length", 512))
     threshold = float(artefacto.get("threshold", 0.5))
-    min_labels = int(artefacto.get("min_labels", 1))
+    # INICIO CAMBIO AUDITORIA TARIFARIO: misma abstención explícita para Transformer candidato.
+    min_labels = min_labels_del_artefacto(artefacto)
+    # FIN CAMBIO AUDITORIA TARIFARIO: misma abstención explícita para Transformer candidato.
     classes = artefacto["classes"]
     encoded = tokenizer(texto, truncation=True, max_length=max_length, padding=False, return_tensors="pt")
     encoded = {key: value.to(device) for key, value in encoded.items()}
@@ -256,7 +300,15 @@ def predecir_con_modelo(req: PrediccionRequest, path: Path = MODEL_PATH) -> Tupl
     if not artefacto:
         raise ValueError("Modelo ML no entrenado.")
 
-    texto = texto_request(req)
+    # INICIO CAMBIO AUDITORIA TARIFARIO: features comunes y abstención honesta en entrada vacía.
+    texto = texto_request(req, artefacto)
+    if (
+        not texto
+        and es_artefacto_tarifario(artefacto)
+        and artefacto.get("allow_abstention") is True
+    ):
+        return prediccion_candidata_vacia(), 0.0
+    # FIN CAMBIO AUDITORIA TARIFARIO: features comunes y abstención honesta en entrada vacía.
     if not texto:
         raise ValueError("No hay texto clinico suficiente para predecir.")
 

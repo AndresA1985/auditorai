@@ -11,6 +11,11 @@ from .ml_model import MODEL_PATH, predecir_con_modelo
 from .schemas import PrediccionRequest
 from .template_reference import anexar_soporte_plantillas
 
+# INICIO CAMBIO AUDITORIA TARIFARIO: representación versionada y comparación documental aditiva.
+from .features import FEATURE_SCHEMA_VERSION, build_prediction_text
+from .tariff_evidence import annotate_documentary_evidence
+# FIN CAMBIO AUDITORIA TARIFARIO: representación versionada y comparación documental aditiva.
+
 STOPWORDS = {
     "a", "al", "ante", "bajo", "con", "contra", "de", "del", "desde", "el", "en",
     "entre", "es", "esta", "las", "la", "lo", "los", "para", "por", "que", "se", "sin",
@@ -110,7 +115,13 @@ def buscar_grupos_historicos(req: PrediccionRequest) -> List[dict]:
     })
 
 
-def texto_request(req: PrediccionRequest) -> str:
+def texto_request(req: PrediccionRequest, artefacto: dict | None = None) -> str:
+    # INICIO CAMBIO AUDITORIA TARIFARIO: plantillas usan el texto declarado por el candidato.
+    if artefacto and artefacto.get("feature_schema_version") == FEATURE_SCHEMA_VERSION:
+        return build_prediction_text(
+            req, mode=artefacto.get("feature_mode", "clinical_document")
+        )
+    # FIN CAMBIO AUDITORIA TARIFARIO: plantillas usan el texto declarado por el candidato.
     return " ".join([
         req.procedimiento_sistema or "",
         req.hallazgos_conclusion or "",
@@ -143,7 +154,15 @@ def puntuar(req: PrediccionRequest, row: dict, entrada_tokens: Counter) -> float
 def predecir(req: PrediccionRequest) -> Tuple[dict, float]:
     if MODEL_PATH.exists():
         prediccion, score = predecir_con_modelo(req)
-        prediccion, score = anexar_soporte_plantillas(texto_request(req), prediccion, score)
+        # INICIO CAMBIO AUDITORIA TARIFARIO: no duplica el bloque documental al consultar plantillas.
+        representation = {
+            "feature_schema_version": prediccion.get("feature_schema_version"),
+            "feature_mode": prediccion.get("feature_mode", "clinical_document"),
+        }
+        prediccion, score = anexar_soporte_plantillas(
+            texto_request(req, representation), prediccion, score
+        )
+        # FIN CAMBIO AUDITORIA TARIFARIO: no duplica el bloque documental al consultar plantillas.
         prediccion = aplicar_honorarios(req, prediccion)
         return aplicar_tiempos_anestesia(req, prediccion), score
 
@@ -168,14 +187,17 @@ def predecir(req: PrediccionRequest) -> Tuple[dict, float]:
     honorarios_codigo = parse_honorarios(mejor.get("honorario_auditor") or "", codigos)
     honorario = ",".join("{0}({1})".format(codigo, honorarios_codigo[codigo]) for codigo in codigos)
 
-    return {
+    # INICIO CAMBIO AUDITORIA TARIFARIO: el fallback histórico conserva su decisión y sólo anota PDF.
+    fallback_prediction = {
         "codigos": codigos,
         "honorarios_codigo": honorarios_codigo,
         "honorario": honorario,
         "tiempo_anestesia": mejor.get("tiempo_anestesia") or "",
         "nombre_procedimiento": mejor.get("nombre_procedimiento") or mejor.get("procedimiento_auditor") or req.procedimiento_sistema or "",
         "observacion_auditor": "Propuesta generada por IA; validar antes de guardar.",
-    }, score
+    }
+    return annotate_documentary_evidence(req, fallback_prediction), score
+    # FIN CAMBIO AUDITORIA TARIFARIO: el fallback histórico conserva su decisión y sólo anota PDF.
 
 
 def clases_codigos() -> List[dict]:

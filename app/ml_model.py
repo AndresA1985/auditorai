@@ -1,4 +1,7 @@
 import re
+import math
+import operator
+from datetime import date
 from pathlib import Path
 from typing import List, Tuple
 
@@ -7,6 +10,7 @@ import numpy as np
 from . import ml_model_base as _base
 from .ml_model_base import *  # noqa: F401,F403 - API interna compatible
 from .schemas import PrediccionRequest
+from .tariff_evidence import annotate_documentary_evidence
 
 MAX_SUPPORT_LENGTH = 500
 
@@ -153,11 +157,19 @@ def anexar_justificaciones_codigo(
 
 def metricas_modelo_desde_artefacto(artefacto: dict) -> dict | None:
     """Lee únicamente métricas holdout explícitas ligadas al artefacto activo."""
+    # INICIO CAMBIO AUDITORIA TARIFARIO: métricas sintéticas no representan calidad clínica.
+    if (
+        artefacto.get("dataset_kind") == "synthetic"
+        or artefacto.get("clinical_performance_validated", False) is not True
+        or artefacto.get("clinical_validation_gate") != "approved_independent_operator_review"
+    ):
+        return None
+    # FIN CAMBIO AUDITORIA TARIFARIO: métricas sintéticas no representan calidad clínica.
     if artefacto.get("training_scope") != "train_split":
         return None
     evaluacion = artefacto.get("evaluation") or {}
     metricas = evaluacion.get("final_test_metrics") or {}
-    if not evaluacion.get("evaluated"):
+    if evaluacion.get("evaluated") is not True:
         return None
     if not all(campo in metricas for campo in ("f1_macro", "f1_weighted", "size", "dataset")):
         return None
@@ -165,6 +177,25 @@ def metricas_modelo_desde_artefacto(artefacto: dict) -> dict | None:
     fecha = artefacto.get("evaluated_at")
     if not version or not fecha:
         return None
+    # INICIO CAMBIO AUDITORIA TARIFARIO: sólo holdout final, finito y con procedencia explícita.
+    try:
+        if metricas["dataset"] != "test_holdout" or isinstance(metricas["size"], bool):
+            return None
+        if any(isinstance(metricas[name], bool) for name in ("f1_macro", "f1_weighted")):
+            return None
+        size = operator.index(metricas["size"])
+        macro = float(metricas["f1_macro"])
+        weighted = float(metricas["f1_weighted"])
+        if size < 1 or not all(
+            math.isfinite(value) and 0 <= value <= 1 for value in (macro, weighted)
+        ):
+            return None
+        date.fromisoformat(str(fecha)[:10])
+        if not isinstance(version, str) or not version.strip():
+            return None
+    except (TypeError, ValueError, OverflowError):
+        return None
+    # FIN CAMBIO AUDITORIA TARIFARIO: sólo holdout final, finito y con procedencia explícita.
     return {
         "f1_macro": float(metricas["f1_macro"]),
         "f1_weighted": float(metricas["f1_weighted"]),
@@ -182,7 +213,21 @@ def predecir_con_modelo(
     artefacto = _base.cargar_modelo(path)
     if not artefacto:
         raise ValueError("Modelo ML no entrenado.")
-    texto = _base.texto_request(req)
+    # INICIO CAMBIO AUDITORIA TARIFARIO: constructor compartido sólo por contrato de artefacto.
+    candidate = _base.es_artefacto_tarifario(artefacto)
+    texto = _base.texto_request(req, artefacto)
+    if not texto and candidate and artefacto.get("allow_abstention") is True:
+        prediccion = annotate_documentary_evidence(
+            req, _base.prediccion_candidata_vacia(), candidate=True
+        )
+        prediccion.update(
+            {
+                "feature_schema_version": artefacto["feature_schema_version"],
+                "feature_mode": artefacto.get("feature_mode", "clinical_document"),
+            }
+        )
+        return prediccion, 0.0
+    # FIN CAMBIO AUDITORIA TARIFARIO: constructor compartido sólo por contrato de artefacto.
     if not texto:
         raise ValueError("No hay texto clinico suficiente para predecir.")
 
@@ -202,4 +247,14 @@ def predecir_con_modelo(
     metricas = metricas_modelo_desde_artefacto(artefacto)
     if metricas is not None:
         prediccion["metricas_modelo"] = metricas
+    # INICIO CAMBIO AUDITORIA TARIFARIO: PDF se compara después del ranking y nunca lo repondera.
+    prediccion = annotate_documentary_evidence(req, prediccion, candidate=candidate)
+    if candidate:
+        prediccion.update(
+            {
+                "feature_schema_version": artefacto["feature_schema_version"],
+                "feature_mode": artefacto.get("feature_mode", "clinical_document"),
+            }
+        )
+    # FIN CAMBIO AUDITORIA TARIFARIO: PDF se compara después del ranking y nunca lo repondera.
     return prediccion, score

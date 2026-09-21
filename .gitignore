@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 requirements.txt
 __pycache__/
 *.py[cod]
@@ -8,4 +10,7 @@ require
 models/*.joblib
 models/*_hf/
 models/*_runs/
-logs
+candidate_runs/
+*.joblib
+*.pdf
+logs/

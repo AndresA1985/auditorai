@@ -85,6 +85,8 @@ class PredictionResponseContractTests(unittest.TestCase):
 
     def test_metricas_salen_solo_del_holdout_completo(self):
         artefacto = {"training_scope": "train_split", "model_version": "auditoria-codigos-v1.4.0",
+            "clinical_performance_validated": True,
+            "clinical_validation_gate": "approved_independent_operator_review",
             "evaluated_at": "2026-09-03T10:30:00", "evaluation": {"evaluated": True,
             "final_test_metrics": {"dataset": "test_holdout", "size": 1250,
             "f1_macro": 0.8421, "f1_weighted": 0.8573}}}
