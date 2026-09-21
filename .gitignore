@@ -8,3 +8,4 @@ require
 models/*.joblib
 models/*_hf/
 models/*_runs/
+logs
