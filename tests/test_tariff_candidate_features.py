@@ -91,7 +91,7 @@ class TariffCandidateFeatureContractTests(unittest.TestCase):
             self.assertNotIn(marker, text)
 
     def test_malformed_document_tokens_never_become_a_tariff_reference(self):
-        for token in ('CV2026092543271', '9914327199', '4327100', '43271 43264', '<script>43271</script>'):
+        for token in ('CV2026092543271', '9914327199', '432710000', '43271 43264', '<script>43271</script>'):
             with self.subTest(token=token):
                 source = payload(evidencia_tarifario=document(codigos=[{'codigo': token}]))
                 text = build_features(source, mode='document_only')

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_valid
 class CodigoTarifarioDocumental(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    codigo: str = Field(pattern=r"^[0-9]{5,6}$")
+    codigo: str = Field(pattern=r"^[0-9]{5,8}$")
     descripcion: str = Field(default="", max_length=180)
     origen: Literal["texto", "ocr"]
     pagina: int = Field(ge=1, le=10, strict=True)
@@ -45,6 +45,12 @@ AdvertenciaTarifario = Literal[
     "sin_codigos_tarifarios",
     "pdf_invalido",
     "extraccion_fallida",
+    "formato_no_identificado",
+    "tabla_ambigua",
+    "documento_estructura_ambigua",
+    "codigo_validacion_no_verificable",
+    "codigo_validacion_requiere_revision",
+    "celda_tarifario_no_verificable",
 ]
 MotivoAbstencionTarifario = Literal[
     "sin_features_utilizables",
@@ -81,7 +87,7 @@ class EvidenciaTarifario(BaseModel):
 
 
 class CitaTarifario(BaseModel):
-    codigo: str = Field(pattern=r"^[0-9]{5,6}$")
+    codigo: str = Field(pattern=r"^[0-9]{5,8}$")
     fuente: Literal[
         "documento_texto",
         "documento_ocr",
@@ -98,7 +104,7 @@ class CitaTarifario(BaseModel):
 
 
 class DiscrepanciaTarifario(BaseModel):
-    codigo: str = Field(pattern=r"^[0-9]{5,6}$")
+    codigo: str = Field(pattern=r"^[0-9]{5,8}$")
     tipo: Literal[
         "adicional_modelo", "ausente_modelo", "sin_evidencia_documental", "contradiccion_clinica"
     ]
@@ -106,7 +112,7 @@ class DiscrepanciaTarifario(BaseModel):
 
 
 class JustificacionTarifario(BaseModel):
-    codigo: str = Field(pattern=r"^[0-9]{5,6}$")
+    codigo: str = Field(pattern=r"^[0-9]{5,8}$")
     en_documento: bool
     seleccionado: bool
     citas: List[CitaTarifario] = Field(default_factory=list)
@@ -115,7 +121,7 @@ class JustificacionTarifario(BaseModel):
 
 
 class ComparacionRankingTarifario(BaseModel):
-    codigo: str = Field(pattern=r"^[0-9]{5,6}$")
+    codigo: str = Field(pattern=r"^[0-9]{5,8}$")
     score_ranking: float = Field(
         description="Score original del modelo, no calibrado; no se repondera por el PDF."
     )
@@ -129,7 +135,7 @@ class ComparacionRankingTarifario(BaseModel):
 
 
 class OpcionTarifarioDocumental(BaseModel):
-    codigo: str = Field(pattern=r"^[0-9]{5,6}$")
+    codigo: str = Field(pattern=r"^[0-9]{5,8}$")
     descripcion: str = Field(default="", max_length=180)
     prioridad: Literal["alta"]
     requiere_revision: bool

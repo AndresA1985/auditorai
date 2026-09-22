@@ -52,7 +52,7 @@ def annotate_documentary_evidence(req, prediction: dict, *, candidate: bool = Fa
     if not isinstance(previous_differences, list): raise ValueError("Invalid previous discrepancies")
     if any(
         not isinstance(item, dict)
-        or not re.fullmatch(r"[0-9]{5,6}", str(item.get("codigo") or ""))
+        or not re.fullmatch(r"[0-9]{5,8}", str(item.get("codigo") or ""))
         or item.get("tipo") not in ALLOWED_DIFFERENCES
         or not isinstance(item.get("motivo"), str)
         or not 1 <= len(item["motivo"]) <= 500

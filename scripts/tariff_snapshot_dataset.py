@@ -31,6 +31,7 @@ CODE_FIELDS = {"codigo", "descripcion", "origen", "pagina", "confianza_ocr"}
 GROUP = re.compile(r"[A-Za-z][A-Za-z0-9_-]{1,99}\Z")
 HASH = re.compile(r"[a-fA-F0-9]{64}\Z")
 CODE = re.compile(r"[0-9]{5,6}\Z")
+DOCUMENTARY_CODE = re.compile(r"[0-9]{5,8}\Z")
 PERSONAL_TOKEN = re.compile(r"(?<!\d)\d{10}(?!\d)|\bCV[A-Za-z0-9]{5,}\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", re.I)
 ALLOWED_WARNINGS = {
     "sin_documento", "sin_archivo", "pdf_no_adjuntado", "pdf_encriptado",
@@ -38,6 +39,10 @@ ALLOWED_WARNINGS = {
     "ocr_sin_codigos_verificables", "requiere_verificacion_ocr",
     "tiempo_ocr_agotado", "ocr_fallido", "limite_codigos",
     "sin_codigos_tarifarios", "pdf_invalido", "extraccion_fallida",
+    "formato_no_identificado", "tabla_ambigua", "codigo_validacion_no_verificable",
+    "celda_tarifario_no_verificable",
+    "codigo_validacion_requiere_revision",
+    "documento_estructura_ambigua",
 }
 
 
@@ -110,7 +115,7 @@ def validate_record(row: dict, *, data_kind: str) -> str | None:
             return "demasiados_tarifarios"
         origins = set()
         for item in codes:
-            if not isinstance(item, dict) or set(item) - CODE_FIELDS or not CODE.fullmatch(str(item.get("codigo") or "")):
+            if not isinstance(item, dict) or set(item) - CODE_FIELDS or not DOCUMENTARY_CODE.fullmatch(str(item.get("codigo") or "")):
                 return "tarifario_invalido"
             if item.get("origen") not in {"texto", "ocr"} or isinstance(item.get("pagina"), bool) or not isinstance(item.get("pagina"), int) or not 1 <= item["pagina"] <= 10:
                 return "origen_tarifario_invalido"

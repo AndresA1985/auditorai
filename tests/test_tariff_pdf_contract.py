@@ -90,6 +90,35 @@ class TariffPdfContractTests(unittest.TestCase):
                 case = evidence(); case["codigos"][0][key] = "SYNTHETIC_PRIVATE_SENTINEL"
                 with self.assertRaises(ValidationError): request(case)
 
+    def test_eight_digit_references_preserve_strict_documentary_boundary(self):
+        for origin in ("texto", "ocr"):
+            case = evidence(("70200003", "70200004"), origin=origin)
+            case["advertencias"].extend(["codigo_validacion_no_verificable", "formato_no_identificado"])
+            validated = request(case)
+            self.assertEqual([item.codigo for item in validated.evidencia_tarifario.codigos], ["70200003", "70200004"])
+            result = annotate_documentary_evidence(validated, prediction())
+            for field in DECISION_FIELDS:
+                self.assertEqual(result.get(field), prediction().get(field))
+            self.assertEqual([item["codigo"] for item in result["opciones_tarifario_documental"]], ["70200003", "70200004"])
+            PrediccionPayload(**result)
+            for nested in (False, True):
+                invalid = deepcopy(case)
+                target = invalid["codigos"][0] if nested else invalid
+                target["codigo_validacion"] = "CV_SYNTHETIC_LOCAL_ONLY"
+                with self.assertRaises(ValidationError):
+                    request(invalid)
+
+    def test_eight_digit_clinical_contradictions_keep_each_original_source(self):
+        for field in ("hallazgos_conclusion", "descripcion_estudio_013", "informe_tecnico_justificacion"):
+            quote = "No se realizó 70200003 en la prueba sintética."
+            original = prediction()
+            result = annotate_documentary_evidence(request(evidence(("70200003",)), **{field: quote}), original)
+            self.assertTrue(any(item["codigo"] == "70200003" and item["tipo"] == "contradiccion_clinica" for item in result["discrepancias"]))
+            self.assertTrue(any(item["campo"] == field and item["texto"] in quote and item["verificada"]
+                                for item in result["citas_documentales"] if item["alcance"] == "clinica_literal"))
+            for decision in DECISION_FIELDS:
+                self.assertEqual(result.get(decision), original.get(decision))
+
     def test_structured_evidence_enforces_bounded_counts_page_description_and_hash(self):
         mutations = [lambda x: x.update(documento_sha256=None),
             lambda x: x.update(documento_sha256="invalid"),

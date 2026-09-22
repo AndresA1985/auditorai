@@ -17,7 +17,7 @@ se conserva: `POST /predecir_auditoria`. GEN usa únicamente
 | `codigos` | Hasta 25 referencias estructuradas |
 | `advertencias` | Hasta 25 advertencias del enum `AdvertenciaTarifario` |
 
-Cada referencia contiene `codigo` de 5–6 dígitos, `descripcion` de hasta 180
+Cada referencia contiene `codigo` de 5–8 dígitos, `descripcion` de hasta 180
 caracteres, `origen` texto/ocr, `pagina` entera estricta entre 1 y 10 y
 `confianza_ocr` opcional entre 0 y 100. Esta última solo corresponde a OCR; no es
 un score clínico. No se aceptan campos adicionales en la evidencia ni en sus
