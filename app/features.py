@@ -56,7 +56,7 @@ def documentary_references(payload: dict) -> list[dict]:
         if hasattr(item, "model_dump"): item = item.model_dump()
         if not isinstance(item, dict): continue
         code = item.get("codigo")
-        if not isinstance(code, str) or not re.fullmatch(r"[0-9]{5,6}", code): continue
+        if not isinstance(code, str) or not re.fullmatch(r"[0-9]{5,8}", code): continue
         references.append(item)
     return references[:25]
 
