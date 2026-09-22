@@ -10,6 +10,7 @@ from .honorarios_model import aplicar_honorarios
 from .ml_model import MODEL_PATH, predecir_con_modelo
 from .schemas import PrediccionRequest
 from .template_reference import anexar_soporte_plantillas
+from .tariff_knowledge import annotate_excel_prediction
 
 # INICIO CAMBIO AUDITORIA TARIFARIO: representación versionada y comparación documental aditiva.
 from .features import FEATURE_SCHEMA_VERSION, build_prediction_text
@@ -152,6 +153,25 @@ def puntuar(req: PrediccionRequest, row: dict, entrada_tokens: Counter) -> float
 
 
 def predecir(req: PrediccionRequest) -> Tuple[dict, float]:
+    """Keep the original ranking, then add an independent Excel-only proposal."""
+    try:
+        prediction, score = _predecir_original(req)
+    except ValueError as error:
+        if str(error) not in {
+            "No existe historico codificado para esos filtros.",
+            "No se encontro una referencia historica suficientemente parecida.",
+        }:
+            raise
+        prediction = {
+            "codigos": [], "honorarios_codigo": {}, "honorario": "",
+            "tiempo_anestesia": None, "nombre_procedimiento": "",
+            "observacion_auditor": "Sin propuesta histórica; revisar la evidencia Excel.",
+        }
+        score = 0.0
+    return annotate_excel_prediction(prediction, req), score
+
+
+def _predecir_original(req: PrediccionRequest) -> Tuple[dict, float]:
     if MODEL_PATH.exists():
         prediccion, score = predecir_con_modelo(req)
         # INICIO CAMBIO AUDITORIA TARIFARIO: no duplica el bloque documental al consultar plantillas.

@@ -167,6 +167,18 @@ class OpcionTarifarioDocumental(BaseModel):
 # FIN CAMBIO AUDITORIA TARIFARIO: contrato documental aditivo y separado del ranking clínico.
 
 
+class Informe013B(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    id_informe: str = Field(min_length=1, max_length=100)
+    sitios: List[str] = Field(min_length=1, max_length=30)
+
+    @model_validator(mode="after")
+    def validate_sites(self):
+        if any(not site.strip() or len(site)>100 for site in self.sitios):
+            raise ValueError("Sitios de informe 013B no válidos")
+        return self
+
+
 class PrediccionRequest(BaseModel):
     id_agenda: int
     fecha_agenda: Optional[str] = None
@@ -182,6 +194,17 @@ class PrediccionRequest(BaseModel):
     procedimiento_sistema: Optional[str] = None
     hallazgos_conclusion: Optional[str] = None
     descripcion_estudio_013: Optional[str] = None
+    # Local billing evidence, excluded from every model feature representation.
+    informes_013b: Optional[List[Informe013B]] = Field(default=None, max_length=100)
+    modalidad_planillaje: Optional[Literal["abierto", "paquete"]] = None
+    nivel_sala: Optional[Literal["crm_segundo", "gastro_tercero"]] = None
+
+    @model_validator(mode="after")
+    def unique_reports(self):
+        ids=[report.id_informe for report in self.informes_013b or []]
+        if len(ids)!=len(set(ids)):
+            raise ValueError("Informes 013B duplicados")
+        return self
     # INICIO CAMBIO AUDITORIA TARIFARIO: evidencia estructurada, sin texto PDF crudo ni identidad.
     evidencia_tarifario: Optional[EvidenciaTarifario] = None
     informe_tecnico_justificacion: Optional[str] = Field(default=None, max_length=20000)
@@ -252,6 +275,7 @@ class PrediccionPayload(BaseModel):
     tiempos_anestesia_codigo: Dict[str, Union[int, str]] = Field(default_factory=dict)
     nombre_procedimiento: str = ""
     observacion_auditor: str
+    propuesta_planillaje_excel: Optional[Dict[str, Any]] = None
     # INICIO CAMBIO AUDITORIA TARIFARIO: comparación posterior y prioridad documental separada.
     evidencia_tarifario: Optional[EvidenciaTarifario] = None
     requiere_revision: Optional[bool] = None
