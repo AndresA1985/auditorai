@@ -11,6 +11,7 @@ from . import ml_model_base as _base
 from .ml_model_base import *  # noqa: F401,F403 - API interna compatible
 from .schemas import PrediccionRequest
 from .tariff_evidence import annotate_documentary_evidence
+from .model_consensus import reconcile_autoplan_candidates
 
 MAX_SUPPORT_LENGTH = 500
 
@@ -119,12 +120,26 @@ def anexar_justificaciones_codigo(
             texto_soporte = None
         item.setdefault("descripcion_codigo", "")
         item["texto_soporte"] = texto_soporte
-        if texto_soporte:
+        consensus = item.get("fuente_score") == "consenso_autoplan"
+        if texto_soporte and consensus:
+            item["justificacion"] = (
+                f"Autoplan sugirió el código {codigo} con un puntaje de ranking de "
+                f"{score:.4f} y AuditorAI aplicó el consenso antes de completar honorarios "
+                f"y anestesia. El fragmento clínico asociado fue: \"{texto_soporte}\". "
+                "Requiere validación del auditor."
+            )
+        elif texto_soporte:
             item["justificacion"] = (
                 f"Se sugirio el codigo {codigo} porque el modelo lo ubico en el ranking "
                 f"con un puntaje no calibrado de {score:.4f}. El fragmento del hallazgo "
                 f"que supero el umbral de evidencia para este codigo fue: "
                 f"\"{texto_soporte}\". Requiere validacion del auditor."
+            )
+        elif consensus:
+            item["justificacion"] = (
+                f"Autoplan sugirió el código {codigo} con un puntaje de ranking de "
+                f"{score:.4f} y AuditorAI aplicó el consenso, pero el servicio no devolvió "
+                "un fragmento clínico literal. Requiere validación del auditor."
             )
         else:
             item["justificacion"] = (
@@ -132,6 +147,12 @@ def anexar_justificaciones_codigo(
                 f"con un puntaje no calibrado de {score:.4f}, pero no se encontro evidencia "
                 "textual especifica suficiente para justificarlo. Requiere validacion del auditor."
             )
+        score_semantics = (
+            "Puntaje del candidato Autoplan usado para ordenar la sugerencia consensuada; "
+            "no autoriza publicación automática."
+            if consensus else
+            "Puntaje del modelo de codigos usado para ordenar sugerencias; no es F1 ni probabilidad calibrada."
+        )
         item["evidencias"] = {
             "codigo": {
                 "disponible": bool(texto_soporte),
@@ -139,11 +160,8 @@ def anexar_justificaciones_codigo(
                 "justificacion": item["justificacion"],
                 "score_ranking": round(score, SCORE_DECIMALS),
                 "porcentaje_ranking": round(score * 100.0, 4),
-                "semantica_score": (
-                    "Puntaje del modelo de codigos usado para ordenar sugerencias; "
-                    "no es F1 ni probabilidad calibrada."
-                ),
-                "fuente": "modelo_codigos",
+                "semantica_score": score_semantics,
+                "fuente": "consenso_autoplan" if consensus else "modelo_codigos",
                 "valor_sugerido": codigo,
             },
             "honorario": evidencia_no_disponible("el honorario", "modelo_honorarios"),
@@ -239,10 +257,18 @@ def predecir_con_modelo(
     else:
         prediccion, score = _base.predecir_vecino(artefacto, texto)
 
+    prediccion, consensus_score, consensus_support = reconcile_autoplan_candidates(
+        prediccion, req.autoplan_candidatos
+    )
+    if consensus_score:
+        score = consensus_score
+
     ranking = prediccion.get("codigo_ranking") or []
     hallazgo = req.hallazgos_conclusion or ""
+    model_support = soportes_por_codigo(artefacto, ranking, hallazgo)
+    model_support.update(consensus_support)
     prediccion["codigo_ranking"] = anexar_justificaciones_codigo(
-        ranking, hallazgo, soportes_por_codigo(artefacto, ranking, hallazgo)
+        ranking, hallazgo, model_support
     )
     metricas = metricas_modelo_desde_artefacto(artefacto)
     if metricas is not None:

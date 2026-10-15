@@ -75,6 +75,7 @@ def wrapper(artifact, proposal=None):
          'List':List, 'Tuple':Tuple, 're':re, 'math':math, 'operator':operator, 'date':date,
          'MAX_SUPPORT_LENGTH':500, 'SCORE_DECIMALS':6,
          'annotate_documentary_evidence':annotate_documentary_evidence,
+         'reconcile_autoplan_candidates':lambda prediction,candidates:(deepcopy(prediction),0.0,{}),
          'soportes_por_codigo':lambda artifact, ranking, hallazgo: {'43271':'Frase clínica  con dos espacios.'}})
     return namespace, base, calls
 

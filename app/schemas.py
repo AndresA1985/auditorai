@@ -179,6 +179,34 @@ class Informe013B(BaseModel):
         return self
 
 
+class AutoplanCandidateCode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(pattern=r"^[0-9]{5,8}$")
+    score: float = Field(ge=0.0, le=1.0)
+    support_text: Optional[str] = Field(default=None, min_length=1, max_length=500)
+
+
+class AutoplanCandidates(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["tfidf", "sentence_transformers", "transformer"]
+    artifact_sha256: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
+    threshold: float = Field(gt=0.0, le=1.0)
+    abstained: bool
+    candidate_codes: List[AutoplanCandidateCode] = Field(default_factory=list, max_length=25)
+    publication_allowed: Literal[False]
+
+    @model_validator(mode="after")
+    def validate_candidate_state(self):
+        codes = [item.code for item in self.candidate_codes]
+        if len(codes) != len(set(codes)):
+            raise ValueError("Autoplan no puede devolver códigos duplicados")
+        if self.abstained != (not self.candidate_codes):
+            raise ValueError("La abstención de Autoplan no coincide con sus candidatos")
+        if any(item.score < self.threshold for item in self.candidate_codes):
+            raise ValueError("Todo candidato debe superar el umbral de Autoplan")
+        return self
+
+
 class PrediccionRequest(BaseModel):
     id_agenda: int
     fecha_agenda: Optional[str] = None
@@ -208,6 +236,7 @@ class PrediccionRequest(BaseModel):
     # INICIO CAMBIO AUDITORIA TARIFARIO: evidencia estructurada, sin texto PDF crudo ni identidad.
     evidencia_tarifario: Optional[EvidenciaTarifario] = None
     informe_tecnico_justificacion: Optional[str] = Field(default=None, max_length=20000)
+    autoplan_candidatos: Optional[AutoplanCandidates] = None
     # FIN CAMBIO AUDITORIA TARIFARIO: evidencia estructurada, sin texto PDF crudo ni identidad.
 
 
@@ -244,6 +273,9 @@ class CodigoScore(BaseModel):
         default="No se encontro evidencia textual suficiente para justificar este codigo."
     )
     evidencias: Optional[EvidenciasCodigo] = None
+    score_auditorai_original: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    score_autoplan: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    fuente_score: Optional[Literal["auditorai", "consenso_autoplan"]] = None
 
 
 class MetricasModelo(BaseModel):
@@ -276,6 +308,7 @@ class PrediccionPayload(BaseModel):
     nombre_procedimiento: str = ""
     observacion_auditor: str
     propuesta_planillaje_excel: Optional[Dict[str, Any]] = None
+    consenso_modelos: Optional[Dict[str, Any]] = None
     # INICIO CAMBIO AUDITORIA TARIFARIO: comparación posterior y prioridad documental separada.
     evidencia_tarifario: Optional[EvidenciaTarifario] = None
     requiere_revision: Optional[bool] = None
