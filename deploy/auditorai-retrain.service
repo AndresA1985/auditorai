@@ -5,11 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=anakin
-Group=anakin
-WorkingDirectory=/home/anakin/projects/auditorai
-EnvironmentFile=-/home/anakin/projects/auditorai/.env
-ExecStart=/home/virtual/auditoriai/bin/python scripts/retrain_audited_model.py
+User=sistemas201
+Group=sistemas201
+WorkingDirectory=/home/sistemas201/projects/auditorai
+EnvironmentFile=-/home/sistemas201/projects/auditorai/.env
+EnvironmentFile=-/etc/auditorai-retrain.env
+ExecStart=/home/virtual/autitorai/bin/python scripts/retrain_audited_model.py
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

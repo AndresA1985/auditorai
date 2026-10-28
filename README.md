@@ -83,9 +83,11 @@ sudo systemctl enable --now auditorai-retrain.timer
 systemctl list-timers auditorai-retrain.timer
 ```
 
-Los paths y el usuario de los archivos de `deploy/` corresponden al despliegue
-documentado (`/home/anakin/projects/auditorai` y
-`/home/virtual/auditoriai`). Deben ajustarse si el host utiliza otros paths.
+Los paths y el usuario de los archivos de `deploy/` corresponden al servidor
+201 (`/home/sistemas201/projects/auditorai` y
+`/home/virtual/autitorai`). Las credenciales de solo lectura usadas por el
+reentrenamiento se guardan fuera del repositorio en
+`/etc/auditorai-retrain.env`, con permisos `0600`.
 
 ## Motor neuronal con embeddings
 
