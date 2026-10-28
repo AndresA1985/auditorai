@@ -69,6 +69,19 @@ class AuditedRetrainingTests(unittest.TestCase):
         self.assertIn("fcntl.LOCK_EX | fcntl.LOCK_NB", runner)
         self.assertIn("os.replace(candidate_path, output)", runner)
 
+    def test_authenticated_api_starts_a_non_blocking_retraining_process(self):
+        root = Path(__file__).resolve().parents[1]
+        api = (root / "app" / "main_base.py").read_text()
+        orchestration = (root / "app" / "retraining.py").read_text()
+        runner = (root / "scripts" / "retrain_audited_model.py").read_text()
+
+        self.assertIn('@app.post("/admin/retrain", status_code=202)', api)
+        self.assertIn('@app.get("/admin/retrain/status")', api)
+        self.assertIn("secrets.compare_digest", api)
+        self.assertIn("start_new_session=True", orchestration)
+        self.assertIn('"--status-file"', orchestration)
+        self.assertIn('"status": "published"', runner)
+
 
 if __name__ == "__main__":
     unittest.main()

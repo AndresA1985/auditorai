@@ -240,6 +240,13 @@ class PrediccionRequest(BaseModel):
     # FIN CAMBIO AUDITORIA TARIFARIO: evidencia estructurada, sin texto PDF crudo ni identidad.
 
 
+class RetrainingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    requested_by: str = Field(pattern=r"^[A-Za-z0-9_-]{1,32}$")
+    source_plan_id: int = Field(ge=1)
+
+
 class EvidenciaRanking(BaseModel):
     disponible: bool = False
     texto_soporte: Optional[str] = None

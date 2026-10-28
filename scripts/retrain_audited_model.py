@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import fcntl
 import json
 import math
@@ -14,6 +15,24 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def write_status(path: Path | None, payload: dict) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(".{0}.{1}.tmp".format(path.name, os.getpid()))
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(temporary, 0o640)
+    os.replace(temporary, path)
+    fsync_directory(path.parent)
 
 
 def holdout_dice(artifact: dict) -> float | None:
@@ -96,6 +115,9 @@ def main() -> None:
         type=float,
         default=float(os.getenv("AUDITORIA_RETRAIN_MAX_DICE_REGRESSION", "0.02")),
     )
+    parser.add_argument("--status-file", default="")
+    parser.add_argument("--requested-by", default="scheduler")
+    parser.add_argument("--source-id", type=int, default=0)
     args = parser.parse_args()
     if args.min_rows < 1 or not 0 <= args.max_dice_regression <= 1:
         raise RuntimeError("Los límites del reentrenamiento nocturno no son válidos.")
@@ -106,14 +128,27 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     lock_path = output.with_name(output.name + ".retrain.lock")
     candidate_path = output.with_name(".{0}.{1}.candidate".format(output.name, os.getpid()))
+    status_path = Path(args.status_file) if args.status_file else None
+    if status_path is not None and not status_path.is_absolute():
+        status_path = ROOT / status_path
+    status_base = {
+        "requested_by": str(args.requested_by)[:32],
+        "source_id": max(0, int(args.source_id)),
+        "pid": os.getpid(),
+    }
 
     with lock_path.open("a+") as lock:
         try:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            print(json.dumps({"ok": True, "status": "already_running"}))
+            result = {"ok": True, "status": "already_running", **status_base}
+            write_status(status_path, {**result, "finished_at": utc_now()})
+            print(json.dumps(result))
             return
 
+        write_status(status_path, {
+            "ok": True, "status": "running", "started_at": utc_now(), **status_base,
+        })
         try:
             command = [
                 sys.executable,
@@ -133,12 +168,25 @@ def main() -> None:
             os.chmod(candidate_path, previous_mode)
             os.replace(candidate_path, output)
             fsync_directory(output.parent)
-            print(json.dumps({
+            result = {
                 "ok": True,
                 "status": "published",
                 "output": str(output),
                 **report,
-            }, ensure_ascii=False))
+            }
+            write_status(status_path, {
+                **result, **status_base, "finished_at": utc_now(),
+            })
+            print(json.dumps(result, ensure_ascii=False))
+        except Exception as exc:
+            write_status(status_path, {
+                "ok": False,
+                "status": "failed",
+                "message": str(exc)[:300],
+                "finished_at": utc_now(),
+                **status_base,
+            })
+            raise
         finally:
             candidate_path.unlink(missing_ok=True)
 
