@@ -43,7 +43,11 @@ Ejemplo de respuesta esperada por Aitrol:
 ```
 ## Entrenar modelo
 
-El entrenamiento lee ap_auditoria_doctor_detalle desde MySQL y entrena un modelo enfocado en predecir `codigo_grupo_auditor`. Genera un artefacto local en models/auditai_model.joblib.
+El entrenamiento lee exclusivamente decisiones validadas por el auditor
+(`ap_auditoria_doctor_detalle.estado = 2`) desde MySQL y entrena un modelo
+enfocado en predecir `codigo_grupo_auditor`. Las propuestas IA en estado 1 no
+se usan como verdad de entrenamiento. Genera un artefacto local en
+`models/auditai_model.joblib`.
 
     cd /home/anakin/projects/auditorai
     /home/virtual/auditoriai/bin/python -m pip install -r requirements.txt
@@ -60,6 +64,28 @@ El entrenamiento evalua con una particion 70/15/15:
 - 15% test final: casos reservados para reportar la metrica final.
 
 Cuando models/auditai_model.joblib existe, POST /predecir_codigos usa el modelo entrenado. Si no existe, usa el fallback historico anterior.
+
+### Reentrenamiento nocturno desde decisiones auditadas
+
+`scripts/retrain_audited_model.py` entrena el clasificador multi-label con las
+filas confirmadas por el auditor (`estado = 2`). El modelo candidato se valida
+contra un mínimo de filas y contra la métrica Dice del artefacto vigente. Solo
+después se publica con un reemplazo atómico; si falla el entrenamiento o la
+validación, el modelo anterior continúa activo.
+
+Para instalar el temporizador nocturno de las 02:15 en el servidor del modelo:
+
+```bash
+sudo cp deploy/auditorai-retrain.service /etc/systemd/system/
+sudo cp deploy/auditorai-retrain.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now auditorai-retrain.timer
+systemctl list-timers auditorai-retrain.timer
+```
+
+Los paths y el usuario de los archivos de `deploy/` corresponden al despliegue
+documentado (`/home/anakin/projects/auditorai` y
+`/home/virtual/auditoriai`). Deben ajustarse si el host utiliza otros paths.
 
 ## Motor neuronal con embeddings
 

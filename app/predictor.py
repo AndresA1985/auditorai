@@ -77,6 +77,7 @@ def buscar_grupos_historicos(req: PrediccionRequest) -> List[dict]:
     sql = """
         SELECT
             id_agenda,
+            id_hc_procedimientos,
             id_empresa,
             id_seguro,
             codigo_grupo_auditor,
@@ -90,7 +91,7 @@ def buscar_grupos_historicos(req: PrediccionRequest) -> List[dict]:
             MAX(conclusion) AS conclusion,
             COUNT(*) AS detalles
         FROM ap_auditoria_doctor_detalle
-        WHERE estado = 1
+        WHERE estado = 2
           AND codigo IS NOT NULL
           AND codigo <> ''
           AND id_agenda <> %(id_agenda)s
@@ -98,6 +99,7 @@ def buscar_grupos_historicos(req: PrediccionRequest) -> List[dict]:
           AND (%(id_seguro)s IS NULL OR id_seguro = %(id_seguro)s)
         GROUP BY
             id_agenda,
+            id_hc_procedimientos,
             id_empresa,
             id_seguro,
             codigo_grupo_auditor,
@@ -229,7 +231,7 @@ def clases_codigos() -> List[dict]:
             GROUP_CONCAT(DISTINCT porcentaje ORDER BY porcentaje SEPARATOR ' | ') AS porcentajes_usados,
             GROUP_CONCAT(DISTINCT tiempo_anestesia ORDER BY tiempo_anestesia SEPARATOR ' | ') AS tiempos_anestesia_usados
         FROM ap_auditoria_doctor_detalle
-        WHERE estado = 1
+        WHERE estado = 2
           AND codigo IS NOT NULL
           AND codigo <> ''
         GROUP BY codigo

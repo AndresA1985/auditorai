@@ -1,0 +1,11 @@
+[Unit]
+Description=Run AuditorAI audited-model retraining every night
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=auditorai-retrain.service
+
+[Install]
+WantedBy=timers.target

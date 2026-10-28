@@ -33,6 +33,7 @@ def cargar_dataset(limit: int | None, allowed_times: set[str]) -> list[dict]:
     sql = '''
         SELECT
             id_agenda,
+            id_hc_procedimientos,
             fecha,
             id_empresa,
             id_seguro,
@@ -43,7 +44,7 @@ def cargar_dataset(limit: int | None, allowed_times: set[str]) -> list[dict]:
             hallazgo,
             conclusion
         FROM ap_auditoria_doctor_detalle
-        WHERE estado = 1
+        WHERE estado = 2
           AND codigo IS NOT NULL
           AND codigo <> ''
           AND tiempo_anestesia IS NOT NULL

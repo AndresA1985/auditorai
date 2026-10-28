@@ -29,6 +29,7 @@ def cargar_dataset(limit: int | None, allowed_percentages: set[str]) -> list[dic
     sql = '''
         SELECT
             id_agenda,
+            id_hc_procedimientos,
             MAX(fecha) AS fecha,
             MAX(id_empresa) AS id_empresa,
             MAX(id_seguro) AS id_seguro,
@@ -40,14 +41,14 @@ def cargar_dataset(limit: int | None, allowed_percentages: set[str]) -> list[dic
             MAX(hallazgo) AS hallazgo,
             MAX(conclusion) AS conclusion
         FROM ap_auditoria_doctor_detalle
-        WHERE estado = 1
+        WHERE estado = 2
           AND codigo IS NOT NULL
           AND codigo <> ''
           AND (
                 (honorario_auditor IS NOT NULL AND honorario_auditor <> '')
                 OR (porcentaje IS NOT NULL AND porcentaje <> '')
               )
-        GROUP BY id_agenda, codigo
+        GROUP BY id_agenda, id_hc_procedimientos, codigo
         ORDER BY MAX(fecha) ASC, id_agenda ASC, codigo ASC
     '''
     if limit:

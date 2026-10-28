@@ -1,0 +1,15 @@
+[Unit]
+Description=AuditorAI nightly retraining from auditor-validated decisions
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=anakin
+Group=anakin
+WorkingDirectory=/home/anakin/projects/auditorai
+EnvironmentFile=-/home/anakin/projects/auditorai/.env
+ExecStart=/home/virtual/auditoriai/bin/python scripts/retrain_audited_model.py
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

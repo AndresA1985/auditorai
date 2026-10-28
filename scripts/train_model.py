@@ -24,6 +24,7 @@ def cargar_dataset(limit: int | None = None) -> list[dict]:
     sql = """
         SELECT
             id_agenda,
+            id_hc_procedimientos,
             MAX(fecha) AS fecha,
             MAX(id_empresa) AS id_empresa,
             MAX(id_seguro) AS id_seguro,
@@ -36,13 +37,14 @@ def cargar_dataset(limit: int | None = None) -> list[dict]:
             MAX(tiempo_anestesia) AS tiempo_anestesia,
             COUNT(*) AS detalles
         FROM ap_auditoria_doctor_detalle
-        WHERE estado = 1
+        WHERE estado = 2
           AND hallazgo IS NOT NULL
           AND hallazgo <> ''
           AND codigo_grupo_auditor IS NOT NULL
           AND codigo_grupo_auditor <> ''
         GROUP BY
             id_agenda,
+            id_hc_procedimientos,
             codigo_grupo_auditor
         ORDER BY MAX(fecha) ASC, id_agenda ASC
     """
@@ -74,6 +76,7 @@ def separar_codigos(valor: str) -> tuple[str, ...]:
 def etiqueta(row: dict) -> dict:
     return {
         "id_agenda": row.get("id_agenda"),
+        "id_hc_procedimientos": row.get("id_hc_procedimientos"),
         "fecha": str(row.get("fecha") or ""),
         "id_empresa": row.get("id_empresa"),
         "id_seguro": row.get("id_seguro"),
